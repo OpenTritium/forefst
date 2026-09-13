@@ -165,7 +165,7 @@ The same value guards **both** kinds of log record — the control page and the 
 the type field at entry header +0x30 (1 and 2 respectively; no other type occurs).
 
 `forefst mlog --stats` recomputes it for every record and reports the verdict, so a torn or edited record is
-named rather than parsed in silence. Across the image corpus — ReFS 3.4 through 3.15, 4 K and 64 K clusters —
+named rather than parsed in silence. Across the image corpus — ReFS 3.4 through 3.14, 4 K and 64 K clusters —
 all 599,039 data records and all 95 control pages recompute exactly.
 
 > **It is an integrity check, not a signature.** Being an XOR fold it catches any altered byte — a single-bit

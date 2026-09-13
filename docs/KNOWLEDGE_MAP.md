@@ -84,11 +84,12 @@ only, and the sync step regenerates.
 | [deduplication.md](concepts/deduplication.md) | Deduplication is the one ReFS feature that deliberately stores file content with no live file pointing … | CT_BKRC_001, CT_BKRC_RA_001, CT_BKRC_RA_002, CT_BKRC_RA_003, FS_CHKP_015, FS_CHKP_RA_001 |
 | [deletion_recovery.md](concepts/deletion_recovery.md) | When a file is deleted on ReFS, the question for an analyst is not whether an entry was scrubbed in … | FN_PATH_001, FS_CHKP_RA_014, FS_DEL_RA_005, MD_DEL_RA_001, MD_DEL_RA_003, MD_DEL_RA_004, MD_DISK_RA_008 |
 | [driver_architecture.md](concepts/driver_architecture.md) | The on-disk structures only tell half the story; the other half is the code that writes them. | FS_VBR_RA_011, GN_ARCH_006, GN_ARCH_SA_002, GN_BIN_SA_001, GN_HEAT_SA_001, GN_IMP_SA_001, GN_INS_SA_002, GN_KSR_SA_001 |
+| [driver_builds.md](concepts/driver_builds.md) | Every structural claim on this site is checked against the refs.sys driver as well as against disks. | — |
 | [driver_transitions.md](concepts/driver_transitions.md) | Two different things get called "making a file non-resident", and they are decided by different code in … | FS_MOVE_RA_002, FS_RESD_SA_001, FS_RESD_SA_002, GN_VCB_SA_001, MD_ADS_RA_003, MD_DATA_RA_025, MD_EFS_RA_003, MD_SI_RA_007 |
 | [file_ids.md](concepts/file_ids.md) | A ReFS file has no Object ID of its own (that identifier belongs to directories and system tables — see … | FN_ADDR_001, FN_LINK_002, GN_IDENT_RA_001, MD_DISK_RA_010, MD_SI_RA_008, MD_SI_RA_010, MD_USN_RA_001, MD_USN_RA_002, MD_USN_RA_005, MD_USN_RA_006 |
 | [file_systems.md](concepts/file_systems.md) | Every ReFS forensic decision rests on a small number of general file-system ideas — what a cluster is … | MD_LK_RA_001 |
-| [forensic_analysis_workflow.md](concepts/forensic_analysis_workflow.md) | This is the end-to-end runbook for examining a ReFS volume: a fixed, ordered triage that takes an … | FN_LINK_003, FS_CHKP_005, FS_CHKP_RA_001, FS_CHKP_RA_012, FS_CHKP_RA_013, FS_CHKP_RA_014, FS_DEL_RA_005, FS_SUPB_001, FS_SUPB_005, FS_SUPB_007, FS_SUPB_RA_003, FS_SUPB_RA_005 |
-| [hard_links.md](concepts/hard_links.md) | A hard link is a second (or third, ...) directory name that points at one physical file. | FN_LINK_001, FN_LINK_002, FN_LINK_003, FN_LINK_004, FS_OTBL_RA_008, MD_DATA_RA_004, MD_DATA_RA_006, MD_SI_RA_001, MD_SI_RA_009 |
+| [forensic_analysis_workflow.md](concepts/forensic_analysis_workflow.md) | This is the end-to-end runbook for examining a ReFS volume: a fixed, ordered triage that takes an … | FN_LINK_003, FS_CHKP_005, FS_CHKP_RA_001, FS_CHKP_RA_012, FS_CHKP_RA_013, FS_CHKP_RA_014, FS_DEL_RA_005, FS_SUPB_001, FS_SUPB_005, FS_SUPB_007, FS_SUPB_RA_003, FS_SUPB_RA_005, MD_TS_RA_008 |
+| [hard_links.md](concepts/hard_links.md) | A hard link is a second (or third, ...) directory name that points at one physical file. | FN_LINK_001, FN_LINK_002, FN_LINK_003, FN_LINK_004, FS_OTBL_RA_008, MD_DATA_RA_004, MD_DATA_RA_006, MD_SI_RA_001, MD_SI_RA_009, MD_TS_RA_008 |
 | [integrity_streams.md](concepts/integrity_streams.md) | An integrity stream is a per-file, opt-in feature that protects a file's data with per-block … | CT_DRNT_004, CT_INTS_001, CT_INTS_002, GN_PREF_002, MD_DATA_RA_010, MD_DATA_RA_013, MD_INTG_RA_001, MD_SI_RA_006 |
 | [metadata_bundles.md](concepts/metadata_bundles.md) | A bundle is what export metadata writes: a hash-sealed directory holding the structures of one ReFS … | — |
 | [ntfs_comparison.md](concepts/ntfs_comparison.md) | Almost every ReFS forensic mistake is really an NTFS habit applied to the wrong file system. | AP_REDO_037, MD_SI_RA_008 |
@@ -131,7 +132,7 @@ only, and the sync step regenerates.
 ## 2. Findings → the pages that cite them
 
 Before changing a finding, correct every page listed on its row in the same commit. The
-The **124 rows citing more than one page** are not duplication to be consolidated:
+The **125 rows citing more than one page** are not duplication to be consolidated:
 a finding is cited where a page declares what backs its statements, and one finding legitimately
 backs statements on several pages. Measured 2026-09-11: 540 of the 557 citations in the tree sit
 in a `## Evidence` section, and no concept is explained redundantly. What must not happen is two
@@ -595,7 +596,7 @@ pages stating one fact with *different numbers* — gates 7h and 7i check exactl
 | `MD_TS_RA_004` | — | CONFIRMED |  | [artifact_timeline.md](concepts/artifact_timeline.md) |
 | `MD_TS_RA_005` | E2 | CONFIRMED | 2 | [tool_artifact_map.md](concepts/tool_artifact_map.md), [schema_table.md](structures/schema_table.md) |
 | `MD_TS_RA_007` | E2+RD | CONFIRMED |  | [timestomp_detection.md](concepts/timestomp_detection.md) |
-| `MD_TS_RA_008` | E2+RD | CONFIRMED |  | [timestomp_detection.md](concepts/timestomp_detection.md) |
+| `MD_TS_RA_008` | E2+RD | CONFIRMED | 3 | [forensic_analysis_workflow.md](concepts/forensic_analysis_workflow.md), [hard_links.md](concepts/hard_links.md), [timestomp_detection.md](concepts/timestomp_detection.md) |
 | `MD_TS_RA_009` | RD | CONFIRMED |  | [timestomp_detection.md](concepts/timestomp_detection.md) |
 | `MD_UNSUP_RA_001` | — | NEW | 2 | [tool_artifact_map.md](concepts/tool_artifact_map.md), [schema_table.md](structures/schema_table.md) |
 | `MD_USN_RA_001` | — | CONTRADICTED | 2 | [file_ids.md](concepts/file_ids.md), [usn_journal.md](structures/usn_journal.md) |
@@ -610,7 +611,7 @@ pages stating one fact with *different numbers* — gates 7h and 7i check exactl
 
 ## 3. Register rows no page cites
 
-The triage list: **18 of 486** register rows are cited by no page in
+The triage list: **19 of 487** register rows are cited by no page in
 `attributes/, structures/, concepts/, tools/, examples/` — the denominator is the content directories, because those are the
 pages a reader reaches. A row here is one of three things, and the triage decides which:
 
@@ -640,6 +641,7 @@ Rows read in register order. A mention in `changelog.md` does not count as docum
 | `MD_DATA_RA_026` | RD | CONFIRMED |
 | `MD_CS_RA_003` | E2+RD | CONFIRMED |
 | `MD_DATA_RA_029` | RD | CONFIRMED |
+| `FS_VBR_RA_014` | — | CONFIRMED |
 
 ---
-*Generated by `build_docs_index.py` — 82 pages indexed, 468 of 486 register rows cited, 124 cited on more than one page. The claim register is `analysis/reference_table.csv`.*
+*Generated by `build_docs_index.py` — 83 pages indexed, 468 of 487 register rows cited, 125 cited on more than one page. The claim register is `analysis/reference_table.csv`.*

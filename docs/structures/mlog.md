@@ -158,7 +158,7 @@ A record is exactly one log block, so the chain seed is 0 in practice. The recor
 +0x30 says which kind of record it is — **1** for a control page, **2** for a data record; no other value
 occurs on disk.
 
-Across the image corpus (ReFS 3.4 → 3.15, 4 K and 64 K clusters) this reproduces the stored value on all
+Across the image corpus (ReFS 3.4 → 3.14, 4 K and 64 K clusters) this reproduces the stored value on all
 599,039 data records and all 95 control pages.
 
 > **An integrity check, not a signature.** It detects any altered byte — a single-bit flip at any of a

@@ -82,6 +82,7 @@ cares.
 |------|------------------------------|
 | [Architecture](architecture.md) | The two-layer driver (Refs upper / Minstore lower) and the three-tier IRP dispatch |
 | [Driver Interface](driver_architecture.md) | The static-analysis data sheet: imports, embedded codecs, class tables — *which features a build can produce* |
+| [Driver Builds Analysed](driver_builds.md) | Which `refs.sys` builds have been read, and what changed between them — the on-disk format does not move |
 | [Bootstrap Chain](bootstrap_chain.md) | The fixed VBR → SUPB → CHKP → roots traversal every parse begins with |
 
 ### Versioning & upgrade state

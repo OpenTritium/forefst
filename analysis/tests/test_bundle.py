@@ -194,3 +194,80 @@ def test_truncated_blob_is_caught(bundle, tmp_path):
     _reseal(dup)
     v = run(dup, "verify-bundle")
     assert v.returncode == 2, "a truncated page blob passed verification"
+
+
+# ─── the manifest's inline count must agree with what the bundle serves ──────
+
+def _csv_rows(target):
+    import csv, io
+    r = run(target, "files", "--csv")
+    assert r.returncode == 0, r.stderr[-400:]
+    return list(csv.DictReader(io.StringIO(r.stdout)))
+
+
+def _ads_image():
+    """A volume carrying alternate data streams, or None."""
+    for rel in ("analysis/rawdisk/disks/step3/win11refs2tspecials.raw",
+                "analysis/rawdisk/disks/step4continuing/win11refs4gattributestest2.raw"):
+        p = os.path.join(WORKSPACE, rel)
+        if os.path.exists(p):
+            return p
+    pub = os.path.join(REPO, "analysis", "samples", "disks")
+    if os.path.isdir(pub):
+        for name in sorted(os.listdir(pub)):
+            cand = os.path.join(pub, name, name + ".raw")
+            if os.path.exists(cand) and "special" in name:
+                return cand
+    return None
+
+
+def test_manifest_inline_bytes_match_the_listing_when_there_are_no_ads(bundle):
+    """Where the accounting is unambiguous, it must agree EXACTLY.
+
+    On a volume with no alternate data streams, every inline byte the bundle carries belongs to a main
+    stream, and `files --csv` reports that stream's size. The two must match to the byte.
+
+    The stream COUNT is compared against inline files of non-zero size: a zero-byte stream has no payload
+    to carry, so the exporter does not count it, while the reader still classifies the file as inline. That
+    is a definitional difference, not a disagreement -- comparing raw counts would fail spuriously.
+    """
+    _img, bdir = bundle
+    man = json.load(open(os.path.join(bdir, "manifest.json")))
+    ic = man["inline_content"]
+    rows = _csv_rows(bdir)
+    inline = [x for x in rows if x.get("DataResidency") == "inline"]
+    if any(x.get("ADSNames", "").strip() for x in rows):
+        pytest.skip("sample carries ADS; the exact-equality case needs a volume without them")
+    assert inline, "no inline rows to compare"
+    assert ic["bytes"] == sum(int(x["FileSize"] or 0) for x in inline)
+    assert ic["streams"] == sum(1 for x in inline if int(x["FileSize"] or 0) > 0)
+
+
+def test_manifest_inline_count_includes_alternate_data_streams(tmp_path):
+    """Regression: the inline count must cover ADS, not main streams only.
+
+    `_parse_ads_from_value` takes one optional context argument. Called with three it raised TypeError on
+    every ADS row, the exception was swallowed, and the manifest counted main streams only -- understating
+    what the bundle carries by more than 20x on a volume full of alternate data streams.
+
+    The check is a strict inequality rather than a recomputed total. Re-deriving the exporter's own
+    accounting in the test would only prove the test models the tool; the inequality can be satisfied only
+    if ADS are counted, and the fault made it false.
+    """
+    img = _ads_image()
+    if img is None:
+        pytest.skip("no ADS-bearing volume available")
+    out = str(tmp_path / "b")
+    r = run(img, "export", "metadata", out)
+    assert r.returncode == 0, r.stderr[-400:]
+    ic = json.load(open(os.path.join(out, "manifest.json")))["inline_content"]
+
+    rows = _csv_rows(out)
+    assert any(x.get("ADSNames", "").strip() for x in rows), "this volume was expected to carry ADS"
+    main_inline = [x for x in rows if x.get("DataResidency") == "inline" and int(x["FileSize"] or 0) > 0]
+
+    assert ic["streams"] > len(main_inline), (
+        "inline stream count (%d) does not exceed the %d non-empty inline MAIN streams, so alternate "
+        "data streams are not being counted" % (ic["streams"], len(main_inline)))
+    assert ic["bytes"] > sum(int(x["FileSize"] or 0) for x in main_inline), (
+        "inline byte total does not exceed the main streams' bytes, so ADS payloads are missing")

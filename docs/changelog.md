@@ -1,6 +1,87 @@
 # Changelog
 
-## v1.12.1 — unreleased — read a metadata bundle without the disk
+## v1.12.2 — unreleased — a bundle that holds what the reader needs
+
+**Everything here is relative to v1.12.1.** Two defects in that release made a bundle disagree with the
+volume it came from. Nothing about how a disk image is parsed changes, and no output on a disk image moves.
+
+### A bundle was missing pages the reader asks for on demand
+
+`export metadata` captured the pages its own walk enumerated. That is not the set a listing needs: some
+backing records are fetched **on demand**, and those pages never reached the bundle. The result was a
+bundle whose own `files --csv` disagreed with its source volume on **31 split-record files**, reporting
+`HasADS=False` and `DataResidency=unknown` — wrong answers on an evidence artefact.
+
+The export now runs a full listing against a recording handle and adds every page it touches. Listing a
+bundle is byte-identical to listing its volume on all seven volumes tested, the 31 disagreements included.
+
+Enumerating today's on-demand callers would have fixed the known cases and missed the next one; recording
+what the reader actually reads covers readers added later too.
+
+### A bundle understated the content it carries, by more than twenty times
+
+The manifest's `inline_content` counted main streams only. Every alternate data stream raised an error that
+was silently swallowed, so a volume whose bundle carries **113** inline streams reported **5**.
+
+Both figures are now correct. This changed what the manifest *says*, not what the bundle *holds* — the
+content was always there. If you have recorded an `inline_content` figure from a v1.12.1 bundle, re-export
+to get the true one.
+
+- **What to change:** nothing, but **re-export any v1.12.1 bundle you intend to rely on.** A bundle made by
+  that version can be missing on-demand pages, which is not visible from the bundle itself.
+
+### Skips are recorded rather than swallowed
+
+Roughly a dozen places that discarded an exception now record what was skipped and why. This does not
+change any result; it makes a partial answer say so.
+
+### Correction: nothing here is verified on ReFS 3.15, and the site no longer says otherwise
+
+The tagline, the coverage line on the home and about pages, the verification page and the format-support
+matrix all presented this project as covering **ReFS 3.4–3.15**. That was wrong.
+
+**3.14 is the newest format any released Windows writes.** A preview driver reports a maximum supported
+version of 3.15 and stamps that number into the volume's *driver* field once it has mounted it — which
+remains a useful signal that a preview build touched a volume. But no volume is *formatted* 3.15. The one
+image in the corpus that reported 3.15 is a v3.14 volume with a hand-edited version byte, built alongside a
+`6.66` twin to test how the tools handle an implausible version. A driver's maximum supported version had
+been read as a volume format.
+
+- **What to change:** nothing. No claim became less true and no output changed — each statement was verified
+  on the volume it was always verified on. What changed is the name under which that verification was
+  counted, and the removal of a published implication of evidence that does not exist.
+- The format-support matrix now shows six formats instead of seven. **Every 3.14 count is unchanged**, because
+  every statement that had been credited to 3.15 was already credited to 3.14 — which is what that volume is.
+
+Reported by the project maintainer.
+
+### A boot-sector version edited *downward* erases itself on the next mount
+
+Investigating the 3.15 images turned up a behaviour worth an examiner's attention, now documented on
+[Redundancy](concepts/redundancy.md).
+
+The boot sector is duplicated, and a mismatch between the two copies is the standard way to spot a tampered
+version field. That works only for tampering the driver leaves alone. A version set **below** the volume's
+true format is **rewritten upward the next time the volume is mounted**, and the boot sector's own checksum
+is recomputed with it — so a volume edited to an older version and then mounted once carries a boot sector
+byte-for-byte identical to an untouched one.
+
+Measured on a purpose-built series: one volume edited to 3.12 mounts, reads back 3.14, and its boot sector
+matches the pristine one exactly. The same volume edited to an impossible 6.66 does **not** mount at all —
+the image is unchanged after the attempt, checkpoint clock included.
+
+**A consistent version field is not evidence the field was never altered.** Only an edit the driver does not
+correct — a higher version, or an impossible one — survives to be caught by comparing the two copies.
+
+### Which driver builds have been read
+
+New page: [Driver Builds Analysed](concepts/driver_builds.md) — the `refs.sys` builds behind the structural
+claims on this site, and what changed between them. Six builds spanning ReFS 3.4 to 3.14 and an Insider
+build. Across the four 24H2 builds nothing on disk changed: the servicing updates rename functions, fold
+one into its caller, graduate feature flags, and add a range check. A volume written by any of them is read
+the same way.
+
+## v1.12.1 — 2026-09-12 — read a metadata bundle without the disk
 
 **Everything here is relative to v1.12.0.** One new capability and one new command; no change to how any
 volume is parsed, and no output on a disk image moves.
@@ -78,7 +159,7 @@ the same volume unpacked a different way failed the check — `zstd -d`, `zstd -
 
 The known-issue notice for the 1.11.3 decoder defect is retired — 1.12.0 fixed it.
 
-## v1.12.0 — unreleased — one decoder order, and the consolidation
+## v1.12.0 — 2026-09-12 — one decoder order, and the consolidation
 
 **Everything here is relative to v1.11.3.** Work in progress; this entry is written as the net effect for
 someone upgrading from 1.11.3, not as a diary of the milestones behind it.

@@ -296,9 +296,13 @@ on the raw-disk corpus (RD). Specifically:
   exact byte offset into a `$J` record naming that file.
 - **MLog redo dispatch** (E2): opcode at `_SmsRedoRecord`+0x04, dispatched by `CmsLogRedoQueue::PerformRedo`;
   contiguous ranges v3.4 0x00–0x1C (29 values) and v3.14 0x00–0x2B (44 values).
-- **Per-name `$SI` MACB and the hard-link cross-check** (RD, finding **FN_LINK_003 / E59**): each name is
-  an independent type-0x30 row with its own four FILETIMEs; a name-scoped timestomp rewrites only the
-  opened name, so sibling hard-link names retain the true birth and diverge from the stomped one.
+- **Per-name `$SI` MACB** (RD, finding **FN_LINK_003 / E59**): each name is an independent type-0x30 row
+  with its own four FILETIMEs, which is a real structural difference from NTFS, where all hard links share
+  one `$SI`. **It is not a reliable timestomp cross-check.** A later lab measurement (**MD_TS_RA_008**)
+  found that a `SetFileTime` through one name updates **both** index entries — the two rows were
+  byte-identical on disk across the whole 84-byte value — so a backdate applied through either name leaves
+  no divergence to find. Divergence *has* been observed on disk, but the mechanism that produces it was
+  never decompiled and is not known to be `SetFileTime`. Treat sibling agreement as proving nothing.
 
 Also registered for statements on this page: **FS_SUPB_RA_005**. See [how this was verified](../methodology.md) to trace these to the exact images and measurements in
 `analysis/`.

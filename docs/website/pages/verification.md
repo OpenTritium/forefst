@@ -79,8 +79,11 @@ not in the prose.
 
 ## Scope
 
-The reference covers ReFS **3.4 through 3.15** plus an Insider preview; facts are versioned where they
-change. Where neither the code nor the disk could settle a question, it is left as an open question rather
+The reference covers ReFS **3.4 through 3.14** plus an Insider preview; facts are versioned where they
+change. 3.14 is the newest format any released Windows writes. A preview driver reports a maximum
+supported version of **3.15** and stamps that number in the volume's driver field once it has mounted it,
+but no volume here — or, as far as this project can tell, anywhere — is *formatted* 3.15, so nothing is
+claimed about it. Where neither the code nor the disk could settle a question, it is left as an open question rather
 than asserted — and no claim rests on a single image.
 
 Coverage is not uniform, and pretending otherwise would undercut everything above. **[Format

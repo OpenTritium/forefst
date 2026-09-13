@@ -87,7 +87,7 @@ that the volume's current version does not tell you how any individual page was 
 
 > **Invariant — `(u32@+0x20 − u32@+0x10) / 4 == u32@+0x14`.** The array length and the row count must
 > agree. Measured across the whole corpus: **118,351 pages, 0 violations**, on ReFS 3.4, 3.7, 3.9, 3.10,
-> 3.14, 3.15 and Insider. It is the cheapest structural check for "is this really a node page", and worth
+> 3.14 and Insider. It is the cheapest structural check for "is this really a node page", and worth
 > asserting before trusting any row on it.
 >
 > Note that a page is **not** one cluster: on a 4 KiB-cluster volume it is four, and the key-index array

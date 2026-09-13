@@ -93,9 +93,17 @@ The redundancy is not just resilience — each of the three policies leaves a re
   v3.14 with a backup still reading v3.4, or v3.14 with a v3.9 backup) — recovering the *exact* original
   version where [Version Detection](version_detection.md) from `$VolInfo` alone could only say
   "pre-v3.10". On **VBR tampering**, the same divergence exposes it: the backup holds the authentic
-  version while the primary carries an altered one (for example an impossible v6.66 or v3.15 primary over
-  an authentic v3.14 backup). The driver cannot detect either case, because the boot sector has no
+  version while the primary carries an altered one (for example a primary reading v6.66, which no ReFS
+  version has ever been, or v3.15, which is the maximum a preview driver can *write* but which no
+  volume is formatted with — over an authentic v3.14 backup). The driver cannot detect either case, because the boot sector has no
   cross-copy check.
+
+  **But this exposes only tampering the driver leaves alone.** A version set *below* the volume's true
+  format is rewritten upward the next time the volume is mounted, and the boot sector's own checksum is
+  recomputed with it — so a volume edited to an older version and then mounted once carries a boot sector
+  byte-for-byte identical to an untouched one, in both copies. A consistent version field is therefore not
+  evidence that the field was never altered; only an edit the driver does not correct (a higher version, or
+  an impossible one) survives to be caught this way.
 
 - **The lower-clock checkpoint is a rollback target.** It holds the metadata roots from before the last
   flush — recoverable prior-tree state. On a *cleanly* shut volume the two checkpoints usually decode to

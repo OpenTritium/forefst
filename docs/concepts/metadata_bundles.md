@@ -31,7 +31,7 @@ extended attributes and `$RECYCLE.BIN` records are in there too.
 `manifest.json` and again in the banner every time it is opened:
 
 ```
-[forefst]   File CONTENT is not in a bundle except what ReFS stores inline: 4037 stream(s), 1215305 byte(s).
+[forefst]   File CONTENT is not in a bundle except what ReFS stores inline: 159 stream(s), 8866 byte(s).
 ```
 
 There is no redaction option. One was attempted and withdrawn: locating payloads by searching for their

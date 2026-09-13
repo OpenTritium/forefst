@@ -238,7 +238,9 @@ own `value+0x38`: zero over-merge across the image corpus, the `fsutil` control 
 multi-name groups preserved. Findings: **FN_LINK_002** (mechanism), **FS_OTBL_RA_008** (home-dir backref),
 **FN_LINK_002, MD_SI_RA_009 / MD_SI_RA_001** (`$SI+0x70` is embedded-only, never > 1),
 **MD_DATA_RA_004** (type-0x40 stream key), **MD_DATA_RA_006** (`alloc=0` stub form); the size match
-defeats the colliding-ordinal over-merge. The per-name MACB divergence was proven on disk against a
-two-name file whose one name was name-scoped timestomped while its sibling kept the true birth
-(**FN_LINK_003 / E59**). Also registered for statements on this page: **FN_LINK_001**, **FN_LINK_004**. See [how this was verified](../methodology.md) to trace these to the exact images
+defeats the colliding-ordinal over-merge. Per-name MACB divergence was observed on disk against a
+two-name file whose names carried different times (**FN_LINK_003 / E59**) — but the mechanism was never
+decompiled, and a later lab measurement (**MD_TS_RA_008**) found a `SetFileTime` through one name updates
+**both** rows, byte-identical across all 84 bytes. So sibling names agreeing does **not** clear a file, and
+this is not a timestomp cross-check to rely on. Also registered for statements on this page: **FN_LINK_001**, **FN_LINK_004**. See [how this was verified](../methodology.md) to trace these to the exact images
 and measurements in `analysis/`.

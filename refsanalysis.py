@@ -63,7 +63,7 @@ from forefst import (
 )
 
 PROG = "refsanalysis"
-VERSION = "1.12.1"
+VERSION = "1.12.2"
 
 
 
@@ -1272,8 +1272,8 @@ def _alloc_walk_tier(f, ps, cs, tr, roots, root_idx, want_id):
         f.seek(ps + p0 * cs); pg = f.read(cs)
         if pg[:4] == b"MSB+":
             root_id = le64(pg, 0x48)
-    except (OSError, OverflowError):
-        pass
+    except (OSError, OverflowError) as _e:
+        _skip_note("_alloc_walk_tier", "an allocator row", _e)
     seen = set(); stack = [(list(roots[root_idx]), 0)]
     while stack:
         lcns, depth = stack.pop()
@@ -1284,7 +1284,8 @@ def _alloc_walk_tier(f, ps, cs, tr, roots, root_idx, want_id):
             for v in lcns:
                 p = v if real else tr.tr(v)
                 f.seek(ps + p * cs); data += f.read(cs)
-        except (OSError, OverflowError):
+        except (OSError, OverflowError) as _e:
+            _skip_note("_alloc_walk_tier", "an allocator row", _e)
             continue
         if data[:4] != b"MSB+" or len(data) < 0x54:
             continue
@@ -1688,7 +1689,8 @@ def cmd_chkp(image, remaining, partition_start):
                 vc = le64(raw, 0x10)
                 if vc > best_vc:
                     best_raw = raw; best_vc = vc; best_off = off
-            except (OSError, SystemExit):
+            except (OSError, SystemExit) as _e:
+                _skip_note("cmd_chkp", "a checkpoint", _e)
                 continue
         if best_raw is None:
             die("no valid CHKP found")
@@ -2581,7 +2583,9 @@ def _build_backing_index(f, ps, cs, tr, obj_map):
     idx = {}
     for oid, vlcns in obj_map.items():
         try: rows = walk_bplus(f, ps, cs, tr, vlcns)
-        except Exception: continue
+        except Exception as _e:
+            _skip_note("_build_backing_index", "a backing record", _e)
+            continue
         for kd, vd in rows:
             if len(kd) >= 0x10 and le16(kd, 0) == 0x40 and len(vd) >= 0x60:
                 idx.setdefault((oid, le64(kd, 0x08)), []).append((le64(vd, 0x58), le32(vd, 0x48)))
@@ -2629,7 +2633,9 @@ def _walk_dir_tree(f, ps, cs, tr, obj_map, oid, path, depth, max_depth, results,
     if oid in _visited: return
     _visited.add(oid)
     try: entries = _parse_dir_entries(f, ps, cs, tr, obj_map[oid])
-    except Exception: return
+    except Exception as _e:
+        _skip_note("_walk_dir_tree", "a subtree", _e)
+        return
     for entry in entries:
         child_path = f"{path}/{entry['name']}" if path else entry["name"]
         entry_type = "DIR " if entry["is_dir"] else "FILE"
@@ -3015,7 +3021,8 @@ def _resolve_nonresident_usn(f, ps, cs, tr, obj_map, parent_oid, child_oid, file
             return None
         try:
             rows = walk_bplus(f, ps, cs, tr, obj_map[owner])
-        except Exception:
+        except Exception as _e:
+            _skip_note("_resolve_nonresident_usn", "the USN journal stream", _e)
             return None
         for kd, vd in rows:
             if len(kd) >= 0x10 and le16(kd, 0) == 0x40 and le64(kd, 0x08) == file_id and len(vd) >= 0x70:

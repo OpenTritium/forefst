@@ -172,7 +172,7 @@ the mechanism and its one failure mode (a name whose cached size is stale).
 ## Version differences
 
 `NextFileId` persistence is version-gated. The directory own-row and the non-resident file own-row carry the
-ordinal on v3.4 through v3.10, but are **0 on native v3.14/v3.15**: a persist gate (the volume version
+ordinal on v3.4 through v3.10, but are **0 on native v3.14**: a persist gate (the volume version
 `< 0x30b` test) stops writing the ordinal to the own-row, and on v3.11+ the value lives in the object-record
 payload instead. A resident file's inline $SI always carries its ordinal, on every version. An upgraded
 v3.4-to-v3.14 volume retains the old own-row values. A *zero* own-row value on a native v3.14 volume is

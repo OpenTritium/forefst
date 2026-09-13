@@ -56,7 +56,7 @@ forefst/
 │   ├── methodology.md        #   how every claim was verified
 │   └── KNOWLEDGE_MAP.md      #   topic -> authoritative-source index
 └── analysis/                 # lab materials + verification harness (the tools don't depend on it)
-    ├── reference_table.csv   #   the live claim register (486 findings)
+    ├── reference_table.csv   #   the live claim register (487 findings)
     ├── lab/                  #   VM setup, disk generation, activity generator + baseline
     ├── samples/              #   captured tool output + samples/corpus/ + sample disks
     └── reports/              #   verification scripts, results, per-claim audit/ harness
@@ -85,7 +85,7 @@ One structural difference comes first, because it reframes the whole workflow: *
 - `Created`, `Modified`, `Changed`, and `Accessed` are the `0x10` (`$SI`) set. There is deliberately no `0x30` set: ReFS keeps no `$FILE_NAME` timestamp copy, so timestomping is eventually caught by [other signals](docs/concepts/timestomp_detection.md).
 - The `files` and `usn` outputs are **joinable** on `FileId` + `HomeOid` — together the USN 128-bit FileID — so you can pivot from a file row straight into its change-journal history.
 
-Deep dives: [NTFS vs ReFS](docs/concepts/ntfs_comparison.md) · [Tool-to-artifact map](docs/concepts/tool_artifact_map.md).
+Deep dives: [NTFS vs ReFS](docs/concepts/ntfs_comparison.md) · [Tool-to-artifact map](docs/concepts/tool_artifact_map.md) · [Driver builds analysed](docs/concepts/driver_builds.md).
 
 ## forefst.py — the forensic tool
 
@@ -129,7 +129,7 @@ Where `forefst.py` answers *"what happened on this volume?"*, `refsanalysis.py` 
 
 forefst and its documentation exist to make ReFS analysis *forensically sound* — the core goal of my master's thesis: give analysts an auditable, open-source tool and enough documentation to understand what it reads. refsanalysis and the lab procedures are what keep it that way; ReFS evolves quickly, so both the tools and the knowledge have to stay re-testable against every new build.
 
-A note on how it was built: the code was written with heavy LLM assistance — I'm a security engineer and forensic analyst, not a developer. What makes it trustworthy is not how it was generated but how it was verified. Every structural claim behind these tools had to hold in two independent places — the decompiled `refs.sys` driver and a 110+-image lab corpus — before it entered the [claim register](analysis/reference_table.csv), and the tools are regression-tested against that whole corpus. It is certainly not error-free, but every fact it emits is traceable to evidence you can re-inspect yourself. The method is detailed just below and in [docs/methodology.md](docs/methodology.md). Feedback and bug reports are very welcome.
+A note on how it was built: the code was written with heavy LLM assistance — I'm a security engineer and forensic analyst, not a developer. What makes it trustworthy is not how it was generated but how it was verified. Every structural claim behind these tools had to hold in two independent places — the decompiled `refs.sys` driver ([which builds, and what changed between them](docs/concepts/driver_builds.md)) and a 110+-image lab corpus — before it entered the [claim register](analysis/reference_table.csv), and the tools are regression-tested against that whole corpus. It is certainly not error-free, but every fact it emits is traceable to evidence you can re-inspect yourself. The method is detailed just below and in [docs/methodology.md](docs/methodology.md). Feedback and bug reports are very welcome.
 
 ## License
 

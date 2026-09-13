@@ -246,7 +246,7 @@ def validate_image(path, die_fn=None):
 
 # ─── Constants ────────────────────────────────────────────────────────
 PROG = "forefst"
-VERSION = "1.12.1"
+VERSION = "1.12.2"
 # Phase 3 (4.D): directory walks default to FULL depth (no artificial cap); `--depth N` overrides. The real
 # recursion depth equals the actual directory nesting (ReFS trees are shallow — tens of levels), so this
 # constant is never the binding limit; it just means "don't truncate". main() also raises the interpreter
@@ -748,7 +748,8 @@ def _select_ct_root(f, ps, cs, roots):
         try:
             f.seek(ps + roots[ri][0] * cs); pg = f.read(cs)
             return le64(pg, 0x48) if pg[:4] == b"MSB+" else None
-        except Exception:
+        except Exception as _e:
+            _skip_note("_select_ct_root", "a container-table root candidate", _e)
             return None
     ids = {ri: tid_of(ri) for ri in (7, 8)}
     for want in (0x0B, 0x0C):                       # prefer primary 0x0B, then duplicate 0x0C
@@ -772,7 +773,8 @@ def _select_ot_root(f, ps, cs, tr, roots):
         try:
             f.seek(ps + tr.tr(roots[ri][0]) * cs); pg = f.read(cs)
             return le64(pg, 0x48) if pg[:4] == b"MSB+" else None
-        except Exception:
+        except Exception as _e:
+            _skip_note("_select_ot_root", "an object-table root candidate", _e)
             return None
     for ri in range(len(roots)):                    # root 0 is the Object Table on every known volume
         if tid_of(ri) == 0x02 and roots[ri]:
@@ -1179,7 +1181,8 @@ def _collect_dir_entries(f, ps, cs, tr, obj_map, oid, parent_path, out, visited,
     vlcns = obj_map[oid]
     try:
         rows = walk_bplus(f, ps, cs, tr, vlcns)
-    except Exception:
+    except Exception as _e:
+        _skip_note("_collect_dir_entries", "a directory's rows", _e)
         return
     for kd, vd in rows:
         if len(kd) < 4 or le16(kd, 0) != 0x30: continue
@@ -1374,7 +1377,8 @@ def _descend_embedded_index(vd, base, ctx, _depth=0):
         seen.add(lcns)
         try:
             rows.extend(walk_bplus(f, ps, cs, tr, list(lcns)))
-        except Exception:
+        except Exception as _e:
+            _skip_note("_descend_embedded_index", "an embedded index node", _e)
             continue
     return rows
 
@@ -1445,7 +1449,8 @@ def _b0_stream_name(kd):
         return ""
     try:
         return kd[off:].decode("utf-16-le").rstrip("\x00")
-    except UnicodeDecodeError:
+    except UnicodeDecodeError as _e:
+        _skip_note("_b0_stream_name", "a stream name", _e)
         return ""
 
 
@@ -1732,7 +1737,8 @@ def _backing_inline_data(vd, ctx=None):
     its bytes sat in the record already held."""
     try:
         rows = parse_resident_btree_rows(bytes(vd), ctx)
-    except (ValueError, struct.error, IndexError):
+    except (ValueError, struct.error, IndexError) as _e:
+        _skip_note("_backing_inline_data", "a backing record's inline data", _e)
         return None
     for kd, vr in rows:
         if len(kd) >= 14 and kd[8:12] == _SI_MARKER and kd[12] == 0x80 and kd[13] == 0x00:
@@ -2388,7 +2394,8 @@ def _recover_inline_extent_content(f, ps, cs, tr, vd, _defer_ctx=None):
                 continue
             try:
                 plcn = tr.tr(vlcn + j) if tr else (vlcn + j)
-            except Exception:
+            except Exception as _e:
+                _skip_note("_recover_inline_extent_content", "an inline extent map", _e)
                 return None
             _runs.append((plcn, 1, off))
             f.seek(ps + plcn * cs)
@@ -2503,7 +2510,8 @@ def recover_snapshot_streams(f, ps_off, cs, tr, vd):
         try:
             shared = (_snapshot_shared_blocks(vd, (f, ps_off, cs, tr), ncl, exclude=sub_id, older_than=sub_id)
                       if sub_id else {})
-        except IncompleteEvidence:
+        except IncompleteEvidence as _e:
+            _skip_note("recover_snapshot_streams", "a snapshot stream", _e)
             return None                 # defer: same reason as the live-stream path
         nblocks = (stream_size + cs - 1) // cs
         blocks = {}
@@ -3062,7 +3070,7 @@ def mlog_verify_record(page):
 
     i.e. a four-way interleaved u64 XOR folded to 32 bits, chained across blocks. A record is one block, so
     the chaining seed is 0 in practice. Verified byte-exact on 599,039 data records and 95 control pages
-    across the whole image corpus (ReFS 3.4 -> 3.15 + Insider, 4K and 64K clusters), 0 mismatches, and it
+    across the whole image corpus (ReFS 3.4 -> 3.14 + Insider, 4K and 64K clusters), 0 mismatches, and it
     detects 2,000/2,000 random single-bit flips. Being an XOR fold it is blind to a REORDERING of 8-byte
     words that keeps each word in its own lane (i mod 4) -- it is an integrity check, not a signature.
     """
@@ -3498,7 +3506,8 @@ def build_oid_path_map(f, ps_off, cs, tr, obj_map):
         try:
             rows = walk_bplus(f, ps_off, cs, tr,
                               _as_vlcn_list(obj_map[oid]))
-        except Exception:
+        except Exception as _e:
+            _skip_note("build_oid_path_map", "an object's path", _e)
             return
         for kd, vd in rows:
             if len(kd) < 6 or le16(kd, 0) != 0x30:
@@ -4036,8 +4045,8 @@ def walk_directory_tree(f, ps, cs, tr, obj_map, start_oid, max_depth, enrich, tr
             for _kd, _vd in walk_bplus(f, ps, cs, tr, obj_map[0x540]):
                 if len(_kd) >= 0x18 and le32(_kd, 0) == 0x80000001:
                     reparse_idx[(le64(_kd, 0x10), le64(_kd, 0x08))] = le32(_kd, 0x04)
-        except Exception:
-            pass
+        except Exception as _e:
+            _skip_note("walk_directory_tree", "a directory", _e)
 
     def _walk_dir(oid, parent_path, parent_oid, depth):
         if depth > max_depth or oid in visited:
@@ -4049,7 +4058,8 @@ def walk_directory_tree(f, ps, cs, tr, obj_map, start_oid, max_depth, enrich, tr
         vlcns = obj_map[oid]
         try:
             rows = walk_bplus(f, ps, cs, tr, vlcns)
-        except Exception:
+        except Exception as _e:
+            _skip_note("walk_directory_tree", "a directory", _e)
             return
 
         for kd, vd in rows:
@@ -4082,7 +4092,8 @@ def walk_directory_tree(f, ps, cs, tr, obj_map, start_oid, max_depth, enrich, tr
                                 try:
                                     _lp = le64(_sv, 0x08)
                                     _ln = _sv[0x18:].decode("utf-16-le", "ignore").rstrip("\x00")
-                                except Exception:
+                                except Exception as _e:
+                                    _skip_note("walk_directory_tree", "a directory", _e)
                                     continue
                                 if _ln:
                                     if _lset is None:
@@ -5785,7 +5796,8 @@ def bootstrap(image_path, partition_start=None):
                 vc, flags, roots = parse_chkp(f, ps, cs, cl)
                 if vc >= best_vc:
                     best_vc = vc; best_roots = roots
-            except Exception:
+            except Exception as _e:
+                _skip_note("bootstrap", "a bootstrap structure", _e)
                 continue
         if not best_roots:
             raise ValueError(
@@ -5801,7 +5813,8 @@ def bootstrap(image_path, partition_start=None):
         ct_map = {k: v[0] for k, v in ct_map_raw.items()}
         tr = Translator(ct_map, cpc)
         try:    tr._image = os.path.basename(image_path)   # audit 4.2: label the caveat with its image
-        except Exception:   pass
+        except Exception as _e:
+            _skip_note("bootstrap", "a bootstrap structure", _e)
         _ALL_TRS.append(tr)   # audit 3.2/4.2: remember Translators so their caveat can be surfaced at exit
         del _ALL_TRS[:-4]     # ...but keep only the most recent few. A CLI run builds 1 (2 for --cow-before);
                               # capping stops a long-running LIBRARY process (e.g. verify_claim bootstrapping the
@@ -7756,7 +7769,8 @@ def _extent_node_map(buf, N, f, ps, cs, tr, depth=4, seen=None):
             for l in lcns:
                 f.seek(ps + (tr.tr(l) if tr else l) * cs)
                 page += f.read(cs)
-        except Exception:
+        except Exception as _e:
+            _skip_note("_extent_node_map", "an extent-node row", _e)
             continue
         if len(page) < 0x54 or page[:4] != b"MSB+":
             continue
@@ -8060,7 +8074,9 @@ def _walk_dir_tree(f, ps, cs, tr, obj_map, oid, path, depth, max_depth, results)
     """Recursively walk directory tree, collecting entries."""
     if oid not in obj_map: return
     try: entries = _parse_dir_entries(f, ps, cs, tr, obj_map[oid])
-    except Exception: return
+    except Exception as _e:
+        _skip_note("_walk_dir_tree", "a subtree", _e)
+        return
     for entry in entries:
         child_path = f"{path}/{entry['name']}" if path else entry["name"]
         entry_type = "DIR " if entry["is_dir"] else "FILE"
@@ -8405,14 +8421,18 @@ def _collect_inline_payloads(f, ps, cs, tr, obj_map):
                 if not (len(kd) >= 4 and le16(kd, 0) == 0x30):
                     continue
                 try:
-                    c = get_resident_data_content(vd)
+                    c = get_resident_data_content(vd, (f, ps, cs, tr))
                 except (ValueError, struct.error, IndexError) as _e:
                     _skip_note("inline-content census", "a $DATA row", _e)
                     continue
                 if c:
                     out.append(bytes(c))
                 try:
-                    for a in _parse_ads_from_value(vd, cs, tr) or []:
+                    # _parse_ads_from_value(vd, ctx) takes ONE optional context argument, not (cs, tr).
+                    # Called with three it raised TypeError on every ADS row -- 306 of them on a public
+                    # sample -- so the inline-content figure counted main streams only and understated
+                    # what the bundle carries by more than half.
+                    for a in _parse_ads_from_value(vd, (f, ps, cs, tr)) or []:
                         ac = a.get("content")
                         if ac:
                             out.append(bytes(ac))
@@ -8703,6 +8723,45 @@ def _bundle_rehydrate(bdir, dest):
                 if not place(out, blob, int(r[key], 16) * cs, off, off + n * cs):
                     missing.append("%s row @%s" % (fn, r[key]))
     return m, missing
+
+
+class _ReadRecorder:
+    """Wrap the image handle and record every CLUSTER a read touches.
+
+    `export metadata` walked the roots and every object tree, which is not the same set of pages the
+    reader needs: some backing records are fetched ON DEMAND during a listing (`_home_t40`, E89), and those
+    pages were absent from the bundle. The result was a bundle whose own `files --csv` disagreed with the
+    image on 31 split-record files -- `HasADS=False`, `DataResidency=unknown` -- which is a wrong verdict
+    on an evidence artefact.
+
+    Enumerating the on-demand callers would fix the cases known today and miss the next one. Recording what
+    the reader actually reads captures them all, including readers added later, and is the same chokepoint
+    pattern `content_holes()` uses for content.
+    """
+
+    def __init__(self, fh, ps, cs):
+        self._fh, self._ps, self._cs, self._off = fh, ps, cs, 0
+        self.clusters = set()
+
+    def seek(self, off, whence=0):
+        r = self._fh.seek(off, whence)
+        self._off = self._fh.tell()
+        return r
+
+    def read(self, n=-1):
+        start = self._off
+        data = self._fh.read(n)
+        self._off = self._fh.tell()
+        if data:
+            lo = (start - self._ps) // self._cs
+            hi = (start + len(data) - 1 - self._ps) // self._cs
+            if lo >= 0:
+                for c in range(lo, hi + 1):
+                    self.clusters.add(c)
+        return data
+
+    def __getattr__(self, name):
+        return getattr(self._fh, name)
 
 
 def _source_pin(path, probe=1 << 16):
@@ -10234,7 +10293,8 @@ def _scan_page_slack_t40(page):
             continue
         try:
             _rsz, ko, kl, _fl, vo, vl, _ = struct.unpack_from("<I6H", page, off)
-        except struct.error:
+        except struct.error as _e:
+            _skip_note("_scan_page_slack_t40", "a slack record", _e)
             continue
         # a type-0x40 backing row: key 0x10 past the header, 24-byte key type 0x40, backing value >= 0x68
         if ko != 0x10 or not (0x18 <= kl < 0x40) or not (0x68 <= vl < 0x2000) or vo < 0x10:
@@ -10279,7 +10339,8 @@ def find_orphan_objects(f, ps, cs, tr, obj_map, referenced_oids, log_fn=None):
             continue
         try:
             rows = walk_bplus(f, ps, cs, tr, vlcns)
-        except Exception:
+        except Exception as _e:
+            _skip_note("find_orphan_objects", "an orphan object", _e)
             continue
         name = None; child_ct = 0; si_data = {}
         for kd, vd in rows:
@@ -10329,8 +10390,8 @@ def _build_live_identity(f, ps, cs, tr, obj_map):
                 if len(_kd) > 4 and le16(_kd, 0) == 0x30:
                     _nm = _kd[4:].decode("utf-16-le", errors="replace").rstrip("\x00")
                     live_identity.setdefault((_nm, _decode_dir_row_value(_vd).get("create_time", 0)), set()).add(_oid)
-        except Exception:
-            pass
+        except Exception as _e:
+            _skip_note("_build_live_identity", "a live-identity row", _e)
     return live_identity
 
 
@@ -10557,7 +10618,8 @@ def _scan_backup_copies(f, ps, cs, chkp_lcns):
                                         "cksum_ok": _bck[0], "ckname": _bck[1],
                                         "self_lcn": le64(_s, 0x20), "self_lcn_ok": (le64(_s, 0x20) == lcn),
                                         "sha256": hashlib.sha256(_s).hexdigest()})
-            except (OSError, OverflowError):
+            except (OSError, OverflowError) as _e:
+                _skip_note("_scan_backup_copies", "a backup copy", _e)
                 break
     return out
 
@@ -10669,7 +10731,8 @@ def _walk_btree_pages(f, ps, cs, tr, vlcns, visited, pages_to_check, depth=5):
     for p in plcns:
         try:
             f.seek(ps + p * cs); page += f.read(cs)
-        except (OSError, OverflowError):
+        except (OSError, OverflowError) as _e:
+            _skip_note("_walk_btree_pages", "a B+-tree page", _e)
             return
     if page[:4] != b"MSB+" or depth <= 0:
         return
@@ -11670,7 +11733,8 @@ def cmd_deleted(image, remaining, partition_start):
             try:
                 vc, flags, chkp_roots = _forefst_parse_chkp(f, ps, cs, lcn)
                 checkpoints.append((vc, chkp_roots, lcn))
-            except Exception: pass
+            except Exception as _e:
+                _skip_note("cmd_deleted", "a deleted-file candidate", _e)
         checkpoints.sort(key=lambda x: x[0], reverse=True)
 
         print("=" * 78)
@@ -12303,7 +12367,8 @@ def cmd_integrity(image, remaining, partition_start):
                     vc = le64(raw, 0x10)
                     if vc >= best_vc:
                         best_vc = vc; best_volsig = le32(raw, 0x0C); best_chk = raw
-            except Exception: pass
+            except Exception as _e:
+                _skip_note("cmd_integrity", "a page checksum", _e)
         f.seek(ps); bs = f.read(512)
         chk_type = le16(bs, 0x2A)
         chk_types = {0: "None", 2: "CRC64", 4: "SHA-256"}
@@ -12343,7 +12408,8 @@ def cmd_integrity(image, remaining, partition_start):
                 for p in plcns:
                     f.seek(ps + p * cs); data += f.read(cs)
                 _check_page(data, head, best_volsig, best_vc, report, verbose)
-            except (OSError, OverflowError): pass
+            except (OSError, OverflowError) as _e:
+                _skip_note("cmd_integrity", "a page checksum", _e)
 
         print("=" * 78)
         print("ReFS Metadata Integrity Report")
@@ -12803,6 +12869,41 @@ def cmd_export_metadata(image, remaining, partition_start):
                         blob += rd(p)
                     owner = "object_table" if head in ot_heads else "metadata"
                     idx.append(f"0x{head:x},{len(plcns)},{off},{owner}")
+                # ---- pages the READER needs but the walk does not visit -------------------------
+                # A full listing is run against a recording handle; any cluster it touches that the walk
+                # did not capture is added. This is what makes the bundle complete for on-demand backing
+                # records rather than complete for the pages the exporter happened to enumerate.
+                _rec = _ReadRecorder(f, ps, cs)
+                try:
+                    for _ in walk_directory_tree(_rec, ps, cs, tr, obj_map, 0x600, DEFAULT_DEPTH,
+                                                 True, set()):
+                        pass
+                except (ValueError, OSError, struct.error, KeyError, IndexError, RecursionError) as _e:
+                    manifest["warnings"].append(
+                        {"what": "on-demand capture",
+                         "reason": "the listing pass raised %s: pages it would have reached may be "
+                                   "missing" % type(_e).__name__})
+                _have = set()
+                for _h, _pl in ptc:
+                    for _q in _pl:
+                        _have.add(_q)
+                _extra = sorted(c for c in _rec.clusters if c not in _have and c >= 0)
+                if _extra:
+                    # contiguous runs, so the index stays page-shaped
+                    _runs = []
+                    for _c in _extra:
+                        if _runs and _c == _runs[-1][0] + _runs[-1][1]:
+                            _runs[-1][1] += 1
+                        else:
+                            _runs.append([_c, 1])
+                    for _st, _n in _runs:
+                        off = len(blob)
+                        for _q in range(_st, _st + _n):
+                            blob += rd(_q)
+                        idx.append(f"0x{_st:x},{_n},{off},on-demand")
+                    print(f"  + {len(_extra)} cluster(s) the reader needs that the walk did not visit")
+                    manifest["on_demand_clusters"] = len(_extra)
+
                 # What this blob CONTAINS is stated, because "metadata" understates it: ReFS keeps a
                 # small stream inside the record, so these pages carry file content. An examiner handing
                 # the bundle to someone else is handing over that content, and must be told the amount.
