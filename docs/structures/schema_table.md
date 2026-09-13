@@ -100,9 +100,10 @@ field (refs.sys has no 8.3-generation code; all `8dot3`/`ShortName` code lives i
 setshortname` returns "A local NTFS volume is required"). Directory entries carry only the long name. ReFS
 also does **not** duplicate the four MACB timestamps in a name entry the way NTFS does in `$FILE_NAME`, so
 the NTFS `$SI`-vs-`$FILE_NAME` timestomp cross-check does **not** exist on ReFS **for a single-named file**. A
-**hard-linked** file is the exception: each name is a separate type-0x30 row carrying its own MACB (value
-+0x10/+0x18/+0x20/+0x28), so a name-scoped timestomp leaves the sibling names at the true birth — a ReFS-only,
-journal-independent cross-check (`FN_LINK_003`; forefst's `HARDLINK_MACB_MISMATCH` signal). *(The exact embedded-code
+**hard-linked** file differs: each name is a separate type-0x30 row carrying its own MACB (value
++0x10/+0x18/+0x20/+0x28), and those rows *can* diverge where NTFS's cannot — a ReFS-only,
+journal-independent lead (`FN_LINK_003`; forefst's `HARDLINK_MACB_MISMATCH` signal). Divergence is
+evidence; agreement is not, because one `SetFileTime` updates every name. *(The exact embedded-code
 mapping of 0x130/0x140 — the +0x100 rule vs. the 0x38/0x39 retained-numbering exception — is discussed in
 the thesis $FILE_NAME section; it is not resolved here.)*
 

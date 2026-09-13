@@ -38,8 +38,8 @@ ReFS Timestamp-Anomaly (Timestomp) Detection
   tampering. Weigh the BASIS of each row: a journal/hardlink signal is authoritative; an
   intrinsic ($SI-only) signal is a heuristic that also fires on legitimate timestamp-preserving
   copies/restores. Tiers, exactly as timestomp_verdict() decides them:
-    HIGH   — an AUTHORITATIVE corroboration: the change journal, or a hard-link sibling that
-             preserves the true birth. A count of intrinsic signals never reaches HIGH.
+    HIGH   — an AUTHORITATIVE corroboration: the change journal, or a disagreement between
+             two of the file's own hard-link names. A count of intrinsic signals never reaches HIGH.
     MEDIUM — CHANGE_LATE without PRE_FORMAT (created on THIS volume, metadata altered later),
              or FUTURE (created after the volume's last metadata write).
     INFO   — every signal present is one a timestamp-preserving copy also produces
@@ -78,9 +78,9 @@ the analyst needs to read the signals. Actual tail of the output:
     [AUTHORITATIVE]
       USN_BASIC_INFO_CHANGE  the USN journal recorded a deliberate basic-info edit (no content change)
       USN_CREATE_MISMATCH    $SI created differs from the FILE_CREATE journal record (true birth known)
-      HARDLINK_MACB_MISMATCH one hard-link name's $SI created diverges from a sibling's (ReFS per-name
-                             MACB); the LATEST sibling created is the authentic birth — only the
-                             back-dated name is flagged, never the clean sibling
+      HARDLINK_MACB_MISMATCH one hard-link name's $SI created diverges from another's (ReFS per-name
+                             MACB). Nothing routine produces this; which name is authentic is NOT
+                             established, and its absence means nothing
     [HEURISTIC — $SI only, corroborate]
       CHANGE_LATE            $SI change-time post-dates created/modified (SetFileTime/PowerShell/.NET
                              can't reach change-time) — defeated by a native-API/raw-disk stomp
@@ -106,7 +106,7 @@ volume it came from, which naturally predates this one.
 That is why **their agreement is not conclusive**, and why the pair rates `INFO`.
 Accumulating heuristic signals does not make them authoritative; it only makes the same
 ambiguity fire more often. What lifts a row to HIGH is evidence from outside the
-timestamps — the change journal, or a hard-link sibling that preserves the true birth.
+timestamps — the change journal, or a disagreement between a file's own hard-link names.
 
 ### Step 3 — Pull a single flagged record
 

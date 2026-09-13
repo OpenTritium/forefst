@@ -100,10 +100,15 @@ The redundancy is not just resilience — each of the three policies leaves a re
 
   **But this exposes only tampering the driver leaves alone.** A version set *below* the volume's true
   format is rewritten upward the next time the volume is mounted, and the boot sector's own checksum is
-  recomputed with it — so a volume edited to an older version and then mounted once carries a boot sector
-  byte-for-byte identical to an untouched one, in both copies. A consistent version field is therefore not
-  evidence that the field was never altered; only an edit the driver does not correct (a higher version, or
-  an impossible one) survives to be caught this way.
+  recomputed with it. The correction writes **both** copies — the backup first, then the primary — so a
+  volume edited to an older version and then mounted once carries a boot sector byte-for-byte identical to
+  an untouched one, and there is no divergence left for the check above to find. A consistent version field
+  is therefore not evidence that the field was never altered; only an edit the driver does not correct
+  (a higher version, or an impossible one) survives to be caught this way.
+
+  This is why a genuine *upgrade* behaves differently from this correction: the upgrade does not use the
+  routine that writes both copies, which is precisely why it leaves the pre-upgrade version behind in the
+  backup and the correction does not.
 
 - **The lower-clock checkpoint is a rollback target.** It holds the metadata roots from before the last
   flush — recoverable prior-tree state. On a *cleanly* shut volume the two checkpoints usually decode to

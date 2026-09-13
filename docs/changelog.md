@@ -1,6 +1,42 @@
 # Changelog
 
-## v1.12.2 — unreleased — a bundle that holds what the reader needs
+## v1.12.3 — unreleased — a retracted claim removed from the tool and every page
+
+**Everything here is relative to v1.12.2.** One correction, and the check that keeps it corrected. No
+change to how a volume is parsed; no file's data, timestamps or listing move.
+
+### Comparing a hard-linked file's names does not clear it
+
+The tool and twelve pages said that a name-scoped timestomp rewrites only the opened name, so the other
+names keep the true birth — making a comparison across a file's names a self-contained tamper check, and
+the latest Created among them the authentic one.
+
+**A lab measurement had already refuted that.** Calling `SetFileTime` through one name of a two-name file
+leaves **both** name rows byte-identical across their whole 84-byte value, timestamps included. The
+ordinary tool updates every name at once.
+
+What survives is narrower, and is what the tool and the pages now say:
+
+- **A disagreement between a file's names is evidence.** It was observed on disk and nothing routine
+  produces it. ReFS is genuinely different from NTFS here, where every hard link shares one `$SI` and the
+  copies cannot diverge at all.
+- **Agreement between them clears nothing.** It is exactly what a name-scoped `SetFileTime` leaves behind,
+  and also what an untouched file looks like.
+- **Which name holds the true birth is not established**, because the mechanism behind the observed
+  divergence was never decompiled.
+
+This mattered in the direction that matters most: the old wording invited an examiner to *clear* a
+tampered file because its names agreed.
+
+- **What to change:** if you have cleared a multi-name file on the strength of its names agreeing,
+  that reasoning does not hold. The signal itself still fires on the same files.
+- **Output changes.** The `timestomp` legend and two `--help` texts are reworded, and
+  `HARDLINK_MACB_MISMATCH` now flags **every name** of a group whose Created values disagree, not only the
+  older one. Flagging a single name asserted the others were clean, which is the claim being withdrawn.
+  Expect **more** rows carrying this signal on a volume that has any — one per name in the group rather
+  than one per group. No other signal, tier or file changes.
+
+## v1.12.2 — 2026-09-13 — a bundle that holds what the reader needs
 
 **Everything here is relative to v1.12.1.** Two defects in that release made a bundle disagree with the
 volume it came from. Nothing about how a disk image is parsed changes, and no output on a disk image moves.
@@ -35,7 +71,7 @@ to get the true one.
 Roughly a dozen places that discarded an exception now record what was skipped and why. This does not
 change any result; it makes a partial answer say so.
 
-### Correction: nothing here is verified on ReFS 3.15, and the site no longer says otherwise
+### Correction (E96): nothing here is verified on ReFS 3.15, and the site no longer says otherwise
 
 The tagline, the coverage line on the home and about pages, the verification page and the format-support
 matrix all presented this project as covering **ReFS 3.4–3.15**. That was wrong.

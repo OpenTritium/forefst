@@ -164,12 +164,13 @@ timestamps exist:
 The classic NTFS timestomping check — comparing the `$STANDARD_INFORMATION` set against the
 `$FILE_NAME` set, which the high-level APIs cannot reach — has no equivalent on ReFS **for a
 single-named file**, because there is only one `$SI` set and no `$FN` twin to compare it against. A
-**hard-linked file is the exception**: ReFS carries one `$SI` set *per name*, so each name is an
-independent timestamp copy, and a name-scoped timestomp (the usual case — the analyst opens one path and
-sets its time) rewrites only that name's set while the sibling names keep the true birth. Comparing MACB
-across a file's names is therefore a ReFS-specific tamper check — the latest Created among the siblings is
-the authentic creation, it is journal-independent, and it is *stronger* than NTFS's `$SI`-vs-`$FN`, where
-all hard links share one `$SI` and cannot diverge. For single-named files, timestomping is nonetheless
+**hard-linked file differs**: ReFS carries one `$SI` set *per name*, so each name is an independent
+timestamp copy and the copies **can** hold different times — where NTFS's hard links share a single `$SI`
+and cannot diverge at all. That difference is real, but it buys less than it appears to. A lab
+measurement found that calling `SetFileTime` through one name leaves **both** name rows byte-identical
+across their whole value, so the ordinary tool updates every name at once. Divergence between a file's
+names is therefore evidence worth following; **agreement between them clears nothing**, because it is
+exactly what a name-scoped stomp leaves behind. See [Hard Links](hard_links.md). For single-named files, timestomping is nonetheless
 detectable by three other means. The metadata-change time
 (`$SI`+0x10) is filesystem-controlled and not reachable through the high-level APIs common tools use
 (`SetFileTime`, PowerShell), so a back-dated Created or Modified value leaves change-time far in the

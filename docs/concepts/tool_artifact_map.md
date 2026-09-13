@@ -69,8 +69,9 @@ the wrong reading produces confident-looking false findings. A few are worth sta
   [copy-on-write](copy_on_write.md) for the link mechanism.
 - **For a single-named file, the NTFS `$SI`-vs-`$FILE_NAME` timestomp cross-check has no ReFS equivalent** — ReFS
   stores no `$FILE_NAME` and no short name. But a **hard-linked** file *does* have a ReFS-only analogue: each name is
-  a separate type-0x30 row with its own MACB, so a name-scoped timestomp leaves the sibling names at the true birth
-  (`FN_LINK_003`; the `HARDLINK_MACB_MISMATCH` signal). For single-named files,
+  a separate type-0x30 row with its own MACB, and those rows *can* diverge (`FN_LINK_003`; the
+  `HARDLINK_MACB_MISMATCH` signal). Divergence is evidence; agreement is not — a `SetFileTime` through one
+  name updates every name at once. For single-named files,
   [timestomp detection](timestomp_detection.md) instead compares the parent's type-0x30 inline timestamps
   against the child's type-0x10 $SI and cross-checks the USN `BASIC_INFO_CHANGE` reason code. Looking for a
   `$FILE_NAME` that does not exist is the classic ReFS mis-read.
@@ -127,7 +128,7 @@ measured); the per-goal backing is:
 - **Search by name** — MD_TS_RA_005, MD_UNSUP_RA_001. ReFS has no 8.3 entry, so the type-0x30 key holds the full name.
 - **Timestomp detection** — MD_TS_RA_005, MD_UNSUP_RA_001, FN_LINK_003. No NTFS `$FILE_NAME` cross-check for a
   single-named file (the analog is parent-0x30 vs child-0x10); for a **hard-linked** file, compare the per-name MACB
-  across the file's names — a name-scoped stomp leaves siblings at the true birth (the `HARDLINK_MACB_MISMATCH` signal).
+  across the file's names — divergence is evidence (the `HARDLINK_MACB_MISMATCH` signal), agreement is not.
 - **File content extraction** — MD_SNAP_RA_005, MD_SNAP_RA_006, MD_SNAP_RA_007. Embedded value (key flags 0x01) vs
   a split record's type-0x40 extents; on format 3.11+ a small ADS (< 2 KiB) is inline and a large one
   (≥ 2 KiB) is extent-backed (E61).

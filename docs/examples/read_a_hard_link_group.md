@@ -113,16 +113,19 @@ the sibling names keep their original values. See Step 2b.
 
 ### Step 2b — Compare the names' Created to catch a per-name timestomp
 
-Because each name carries its own Created, comparing the group's names is a ReFS-specific
-tamper check. If one name's Created were backdated while its siblings kept the true birth,
-their `value+0x10` FILETIMEs would no longer agree — and the **latest** Created across the
-siblings is the authentic birth (a name can be pushed back, not forward past creation). For a
-**single-named** file there is no sibling to compare against, so this cross-check simply does
-not apply; but a **hard-linked** file exposes the discrepancy directly on disk. This is
-**journal-independent** (it holds even when `$UsnJrnl:$J` has wrapped or is absent) and is
-**stronger** than NTFS's `$SI`-vs-`$FN`, where all hard links share one `$SI` and cannot
-diverge at all. `forefst`'s `timestomp` check emits a `HARDLINK_MACB_MISMATCH` signal on the
-backdated name and never on the clean sibling.
+Because each name carries its own Created, the group's names *can* disagree — where NTFS's
+hard links share a single `$SI` and cannot diverge at all. When their `value+0x10` FILETIMEs
+differ, that is evidence worth following: nothing routine produces it, and it is
+**journal-independent** (it holds even when `$UsnJrnl:$J` has wrapped or is absent).
+`forefst`'s `timestomp` check emits a `HARDLINK_MACB_MISMATCH` signal on such a group.
+
+**Read the result carefully in both directions.** A lab measurement built a two-name file and
+called `SetFileTime` on one path: afterwards both name rows were byte-identical across their
+whole 84-byte value. So the ordinary tool updates *every* name at once, which means **names
+that agree tell you nothing** — that is what a stomp leaves behind and also what an untouched
+file looks like. And because the mechanism that makes the copies diverge was never decompiled,
+*which* name holds the true birth is not established: treat a mismatch as a lead, not a
+verdict.
 
 ### Step 3 — Confirm the two files resolve to different content records
 

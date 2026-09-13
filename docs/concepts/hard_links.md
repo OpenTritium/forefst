@@ -156,15 +156,33 @@ This cannot arise on **ReFS 3.4**, which has no type-0x40 backings and no index-
   the backing record — 16,191 rows across the corpus do — so the split changes no byte of the data and is
   not a change of data residency. See [Record placement and data residency](placement_and_residency.md).
 
-- **Each name carries its own MACB — a hard-link-specific tamper check.** ReFS keeps one
-  [`$SI`](../attributes/STANDARD_INFORMATION.md) timestamp set *per name*, not per file: every name's
+- **Each name carries its own MACB — and they can disagree, but agreement proves nothing.** ReFS keeps
+  one [`$SI`](../attributes/STANDARD_INFORMATION.md) timestamp set *per name*, not per file: every name's
   type-0x30 value holds its own Created/Modified/Changed/Accessed. For a single-named file there is no
-  timestamp twin to compare against. But a hard-linked file has one independent timestamp copy per name,
-  and a name-scoped timestomp (opening one path and setting its times) rewrites only that name's row —
-  the sibling names keep the true birth. Comparing the names' Created/Modified therefore localises the
-  backdated name, and the latest Created among the siblings is the authentic birth. This cross-check is
-  journal-independent, and it is stronger than NTFS's `$SI`-vs-`$FILE_NAME` check, where all hard links
-  share one `$SI` and cannot diverge.
+  timestamp twin to compare against at all.
+
+  A hard-linked file does have one copy per name, and unlike NTFS — where every link shares a single
+  `$SI` and the copies *cannot* diverge — those copies **can** hold different times. Two names of one
+  file have been seen on disk carrying different Created values.
+
+  **But setting a time through one name is not confined to that name.** A lab measurement built a
+  two-name file and called `SetFileTime` on one path: afterwards both name rows were **byte-identical
+  across their whole 84-byte value**, timestamp block included, and the backing record carried the same
+  times. So the ordinary timestomping tool updates *every* name at once.
+
+  What follows is narrow, and worth stating exactly:
+
+  - **Divergence between names is evidence.** It has been observed on disk, and nothing routine
+    produces it.
+  - **Agreement between names clears nothing.** It is what a `SetFileTime` through one name leaves
+    behind, and it is also what an untouched file looks like. The two are indistinguishable here.
+  - **Which name holds the true birth is not established.** The mechanism that produced the observed
+    divergence was never decompiled, so "the latest Created among the names is the authentic one" is an
+    inference this project cannot currently support.
+
+  Treat a divergence as a lead to follow with the [USN journal](../structures/usn_journal.md) or the
+  [log](../structures/mlog.md), not as a self-contained verdict — and never read sibling agreement as a
+  clean bill of health.
 
 - **Hard links are a v3.14-native-only signal.** A split multi-name group on a volume that should
   be v3.4, or on a volume that was *upgraded* rather than natively formatted, is anomalous (see below).

@@ -9,9 +9,10 @@ NTFS exposes it by comparing the two timestamp sets every file carries, the
 tool stomps `$SI` but leaves `$FN` untouched, the mismatch is the tell. ReFS carries **one `$SI`
 timestamp set per name**, not a second `$FILE_NAME` copy — so for a **single-named** file there is no
 `$SI`-vs-`$FN` twin to compare against and that particular cross-check is unavailable. A **hard-linked**
-file is the exception: each of its names holds an **independent** timestamp copy, so a name-scoped stomp
-leaves the sibling names sitting at the true birth, and comparing a file's names' MACB becomes a
-ReFS-specific tamper check (see [Hard Links](hard_links.md)). Beyond that, timestomping is detectable
+file differs: each of its names holds an **independent** timestamp copy, and those copies **can** hold
+different times — where NTFS's links share one `$SI` and cannot diverge. Divergence between a file's names
+is evidence; **agreement is not**, because calling `SetFileTime` through one name was measured to update
+every name at once (see [Hard Links](hard_links.md)). Beyond that, timestomping is detectable
 through different anchors: the metadata-change time that common
 tools cannot reach, the [USN change journal](../structures/usn_journal.md) that records the tampering
 operation itself, and the volume's own creation time as a hard floor. This page explains each anchor,
@@ -102,7 +103,7 @@ and a different way to be wrong.
 | Signal | Meaning | Source | Strength |
 |--------|---------|--------|----------|
 | **CHANGE_LATE** | `$SI` change time (0x10) post-dates Created/Modified by a wide margin — back-dated B/M against the real metadata-write time | intrinsic ($SI only) | strong vs common tools; **defeated** by a native-API or raw-disk stomp that sets `C` too |
-| **HARDLINK_MACB_MISMATCH** | two names of one hard-linked file disagree on Created — a name-scoped stomp rewrites only the opened name's `$SI` copy, so the sibling name still holds the true birth (the **latest** Created among the names is authentic; only the back-dated name is flagged, never the clean sibling) | intrinsic (per-name `$SI`) | strong; **journal-independent**, and unlike NTFS the copies *can* diverge; only fires when a file has more than one name |
+| **HARDLINK_MACB_MISMATCH** | two names of one hard-linked file disagree on Created. Nothing routine produces this, so it is a strong lead — but which name holds the true birth is **not** established, because the mechanism that makes the copies diverge was never decompiled | intrinsic (per-name `$SI`) | strong; **journal-independent**, and unlike NTFS the copies *can* diverge. Only fires when a file has more than one name, and its **absence means nothing**: a `SetFileTime` through one name updates every name at once |
 | **USN_BASIC_INFO_CHANGE** | the journal holds a **standalone** `BASIC_INFO_CHANGE` (reason 0x8000, with no `FILE_CREATE` or `DATA_*` bits) — a deliberate basic-info / timestamp edit with **no content change**, recorded at its real time | USN journal | authoritative |
 | **USN_CREATE_MISMATCH** | `$SI` Created differs from the file's `FILE_CREATE` journal record (the journal is append-only) | USN journal | authoritative |
 | **PRE_FORMAT** | Created precedes the **volume** creation time — impossible for a file genuinely created here | intrinsic + volume | strong\* |
@@ -119,8 +120,14 @@ caused the inconsistency at the time it actually happened.
 
 `HARDLINK_MACB_MISMATCH` is the exception to that dependence: a creation-preserving copy gives every name
 the same times, so it does **not** trip on benign copies — it fires only when a file's own names genuinely
-disagree on Created, which a name-scoped stomp is the natural cause of. That makes it a self-contained
-tamper check that needs no journal and no volume-create floor to stand on.
+disagree on Created, and nothing routine makes them disagree. It needs no journal and no volume-create
+floor to stand on.
+
+What it does **not** tell you is *why* they disagree. The obvious candidate — a `SetFileTime` through one
+path — was measured and does the opposite: it updates every name at once, leaving them identical. So the
+mechanism behind an observed divergence is unknown, no name can be called the authentic one, and every
+name of a diverging group is flagged rather than a chosen one. Treat it as a strong lead into the
+[journal](../structures/usn_journal.md), not as a self-contained verdict.
 
 ## Confidence tiers
 
@@ -146,28 +153,28 @@ installation as tampered, which trains an examiner to ignore the column.
 **But the pair does not identify that event as a copy.** Deliberately back-dating a creation time produces
 exactly the same two signals — a lab volume whose generator log records **74 `SetCreationTimeUtc` actions**
 carries this signature. So INFO means *a copy and a back-dated creation are indistinguishable here*, and the
-only thing that separates them is an independent source: the USN journal, or a hard-link sibling. **INFO is
-a lowered tier, not an exoneration.**
+only thing that separates them is an independent source: the USN journal, or a disagreement between a
+file's own hard-link names. **INFO is a lowered tier, not an exoneration.**
 
 ### How often each signal fires
 
-Base rates over the full corpus — 96 volumes, 521,060 files. Read them as a floor, not as a typical volume:
-the corpus is mostly small purpose-built lab images.
+Base rates over the full corpus — **102 volumes, 532,959 files**, re-measured in a single pass. Read them
+as a floor, not as a typical volume: the corpus is mostly small purpose-built lab images.
 
 | Signal | Base rate | Tier contribution |
 |---|---|---|
-| `PRE_FORMAT` | 22.67 % | INFO |
-| `CHANGE_LATE` | 22.32 % | MEDIUM only *without* `PRE_FORMAT` |
-| `CREATE_GT_MODIFY` | 1.04 % | INFO |
+| `PRE_FORMAT` | 22.17 % | INFO |
+| `CHANGE_LATE` | 21.83 % | MEDIUM only *without* `PRE_FORMAT` |
+| `CREATE_GT_MODIFY` | 1.69 % | INFO |
 | `ROUND_TIMESTAMPS` | 0.04 % | never lifts a tier |
-| `HARDLINK_MACB_MISMATCH` | 0.04 % | **HIGH** |
+| `HARDLINK_MACB_MISMATCH` | 0.06 % | **HIGH** |
 | `FUTURE` | 4 files | MEDIUM |
 
 The split by volume kind is the reason the tiers are shaped this way. On the corpus's one **real Windows
 installation** (120,617 files) the copy signature fires on **95.7 %** of files — that is what installing an
 operating system looks like — against **1.86 %** across 95 lab-built volumes. Under a tiering that treated
-the pair as corroboration, almost every file on that volume was MEDIUM; the actionable set is now **385**
-files rather than roughly 115,000.
+the pair as corroboration, almost every file on that volume was MEDIUM; the reviewable set is now
+**383 MEDIUM** beside **1,714 HIGH** — rather than roughly 115,000 rows all claiming the same thing.
 
 `ROUND_TIMESTAMPS` is capped by design. Whole-second Created **and** Modified stamps are *suggestive* of a
 deliberately set date but are **not proof**: VirtIO/QEMU driver packages and archive extraction also write
@@ -263,7 +270,10 @@ baseline and a clean operations image (real renames, ADS, snapshots, symlinks, h
 and the same synthetic back-dated files are flagged identically wherever the test corpus was written. The
 journal's standalone `BASIC_INFO_CHANGE` records sit on the timestomp image at the tampering's real time
 while `$SI` shows the forged time. The per-name MACB behind `HARDLINK_MACB_MISMATCH` is a documented
-correction (RD): `$SI` is stored per name entry (per hard link), not per inode, so a name-scoped stomp on
-one of two hard links leaves the sibling name at the true birth — measured directly on a two-name file
-where the opened name reads a back-dated Created and its sibling reads the real creation moment. Also registered for statements on this page: **MD_TS_RA_007**. The controlled-set calibration — eight files with one known cause each, six flagged and all six at INFO — is **MD_TS_RA_008**; that an ADS write updates the parent's LastWrite and LastAccess is **MD_TS_RA_003**; that `$MFT`-editing tools cannot work here is **MD_MISC_001**. See [how this was verified](../methodology.md) to
+correction (RD): `$SI` is stored per name entry (per hard link), not per inode, and the copies were
+observed diverging on a two-name file where one name read a back-dated Created and the other the real
+creation moment. A later lab measurement found the converse does **not** hold: calling `SetFileTime`
+through one name of a two-name file left both rows byte-identical across their whole 84-byte value, so
+agreement between names is not evidence of anything, and the mechanism behind the observed divergence
+remains undecompiled. Also registered for statements on this page: **MD_TS_RA_007**. The controlled-set calibration — eight files with one known cause each, six flagged and all six at INFO — is **MD_TS_RA_008**; that an ADS write updates the parent's LastWrite and LastAccess is **MD_TS_RA_003**; that `$MFT`-editing tools cannot work here is **MD_MISC_001**. See [how this was verified](../methodology.md) to
 trace these to the exact images and measurements in `analysis/`.

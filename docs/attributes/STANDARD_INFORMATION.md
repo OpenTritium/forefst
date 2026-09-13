@@ -116,10 +116,11 @@ a top-level type-0x90 row is `$I30_INDEX`, not `$SI`. See [$I30_INDEX](I30_INDEX
 
 **Timestomping detection.** ReFS carries one `$SI` timestamp set **per name**. For a single-named file
 there is no NTFS-style `$SI`-vs-`$FN` twin to compare — but a **hard-linked** file has one independent
-timestamp copy per name, and a name-scoped timestomp leaves the sibling names at the true birth (the
-latest Created among the siblings is the authentic one). Comparing a file's names' MACB is thus a
-ReFS-specific tamper check — **journal-independent**, and **stronger** than NTFS's `$SI`-vs-`$FN`, where
-all hard links share one `$SI` and cannot diverge. For any file, timestomping is also detectable via the
+timestamp copy per name, and those copies **can** hold different times — where NTFS's hard links share a
+single `$SI` and cannot diverge at all. Divergence between a file's names is evidence worth following.
+**Agreement is not**: calling `SetFileTime` through one name was measured to leave both name rows
+byte-identical across their whole value, so every name is updated at once. Which name holds the true birth
+is not established. For any file, timestomping is also detectable via the
 **metadata-change time (`$SI+0x10`)** (left at the real write moment by the high-level APIs that timestomp
 tools use), the **USN journal** (records the edit and the true create time — the stronger anchor), and the
 **volume creation time** (a hard lower bound). See [Timestomping Detection](../concepts/timestomp_detection.md).

@@ -246,7 +246,7 @@ def validate_image(path, die_fn=None):
 
 # ─── Constants ────────────────────────────────────────────────────────
 PROG = "forefst"
-VERSION = "1.12.2"
+VERSION = "1.12.3"
 # Phase 3 (4.D): directory walks default to FULL depth (no artificial cap); `--depth N` overrides. The real
 # recursion depth equals the actual directory nesting (ReFS trees are shallow — tens of levels), so this
 # constant is never the binding limit; it just means "don't truncate". main() also raises the interpreter
@@ -465,7 +465,8 @@ def timestomp_verdict(flags, usn_conf=False, hl_conf=False, round_ts=False):
 
     `flags`    intrinsic signals from timestomp_intrinsic_flags(), plus any USN_* the caller established.
     `usn_conf` the change journal corroborates (authoritative, independent source).
-    `hl_conf`  a hard-link sibling preserves the true birth (structural, journal-independent).
+    `hl_conf`  two of the file's hard-link names disagree on Created (structural, journal-independent).
+               Which name is authentic is NOT established -- see the F6 note below.
     `round_ts` whole-second Created AND Modified -- a weak hint that never lifts a tier on its own.
 
     A caller with less evidence gets a tier no HIGHER than one with more: the column passes usn_conf=False
@@ -8126,7 +8127,8 @@ def cmd_timestomp(image, remaining, partition_start):
         deliberate timestamp/attribute edit with no content change; FILE_CREATE gives
         the true creation time to compare against $SI.
     Tiers come from timestomp_verdict(), the single source: HIGH only where an AUTHORITATIVE source
-    corroborates (the journal, or a hard-link sibling); MEDIUM for CHANGE_LATE without PRE_FORMAT or for
+    corroborates (the journal, or a disagreement between a file's own hard-link names); MEDIUM for
+    CHANGE_LATE without PRE_FORMAT or for
     FUTURE; INFO where every signal present is one a timestamp-preserving copy also produces; LOW
     otherwise. A count of intrinsic signals never reaches HIGH."""
     import csv as _csv
@@ -8184,12 +8186,19 @@ def cmd_timestomp(image, remaining, partition_start):
         except Exception:
             journal = False
 
-        # F6: HARDLINK_MACB_MISMATCH — a ReFS-native, JOURNAL-INDEPENDENT timestomp signal. On ReFS $SI is stored
-        # per-name-entry (per hard-link), NOT per-inode as on NTFS: a name-scoped SetFileTime rewrites only the
-        # opened name (and the shared backing), while sibling hard-link names keep the TRUE birth. So two names of
-        # one file (same home_oid + file_id) whose Created diverges reveal the stomp, and the LATEST Created is the
-        # authentic birth. We flag only the backdated name(s), never the clean sibling (no false positive).
-        # RD-proven on win11refs8g.raw File ID 0x1e: f6.bin Created 2011 vs f6_link.bin Created 2026 (E59 / FN_LINK_003).
+        # F6: HARDLINK_MACB_MISMATCH — a ReFS-native, JOURNAL-INDEPENDENT signal. On ReFS $SI is stored
+        # per-name-entry (per hard-link), NOT per-inode as on NTFS, so two names of one file (same
+        # home_oid + file_id) CAN disagree on Created, which NTFS's links cannot. Observed on disk:
+        # win11refs8g.raw File ID 0x1e, f6.bin Created 2011 vs f6_link.bin Created 2026 (E59 / FN_LINK_003).
+        #
+        # What this signal does NOT establish (MD_TS_RA_008): a later lab measurement called SetFileTime
+        # through one name of a two-name file and found BOTH rows byte-identical across all 84 bytes, so the
+        # ordinary tool updates every name at once. Therefore (a) agreement between names is NOT evidence of
+        # anything, and (b) the mechanism that produced the observed divergence was never decompiled, so
+        # "the latest Created is the authentic birth" is an inference we cannot support.
+        #
+        # The divergence is real and anomalous, so the group is still flagged -- but the tier legend must
+        # not tell a reader which name is authentic, and neither must the set of rows we flag.
         hl_groups = {}
         for r in files:
             if r.get("resident") or r.get("is_dir"):
@@ -8198,22 +8207,28 @@ def cmd_timestomp(image, remaining, partition_start):
             if key == (0, 0):
                 continue
             hl_groups.setdefault(key, []).append(r)
-        hl_mismatch = {}     # id(r) -> authentic (latest) Created among its hard-link siblings
+        # EVERY name of a diverging group is flagged, not just the older one. Flagging only the older
+        # name would say the newer one is clean, and that is the retracted claim: a SetFileTime through
+        # one name was measured to update BOTH rows byte-identically (MD_TS_RA_008), so whatever produced
+        # an observed divergence is not that call, its mechanism was never decompiled, and there is no
+        # evidence naming one name authentic. The finding the signal supports is about the GROUP -- these
+        # names disagree and nothing routine does that -- so the group is what gets flagged.
+        hl_mismatch = set()  # id(r) for every name in a group whose Created values disagree
         for members in hl_groups.values():
             valid = [m for m in members if _ft_valid(m.get("create_time", 0))]
             if len(valid) < 2:
                 continue
-            authentic = max(m["create_time"] for m in valid)
-            for m in valid:
-                if authentic - m["create_time"] > margin:
-                    hl_mismatch[id(m)] = authentic
+            times = [m["create_time"] for m in valid]
+            if max(times) - min(times) > margin:
+                for m in valid:
+                    hl_mismatch.add(id(m))
 
         def _classify(r):
             ct, mt = r.get("create_time", 0), r.get("modify_time", 0)
             chg, acc = r.get("change_time", 0), r.get("access_time", 0)
             flags = timestomp_intrinsic_flags(ct, mt, chg, acc, vol_create, vol_modify, margin)
             evidence = list(flags)
-            # F6: sibling hard-link preserves the true birth -> journal-independent structural proof.
+            # F6: this file's hard-link names disagree on Created -> journal-independent structural lead.
             hl_conf = id(r) in hl_mismatch
             if hl_conf:
                 evidence.append("HARDLINK_MACB_MISMATCH")
@@ -8308,8 +8323,8 @@ def cmd_timestomp(image, remaining, partition_start):
         print("  tampering. Weigh the BASIS of each row: a journal/hardlink signal is authoritative; an")
         print("  intrinsic ($SI-only) signal is a heuristic that also fires on legitimate timestamp-preserving")
         print("  copies/restores. Tiers, exactly as timestomp_verdict() decides them:")
-        print("    HIGH   — an AUTHORITATIVE corroboration: the change journal, or a hard-link sibling that")
-        print("             preserves the true birth. A count of intrinsic signals never reaches HIGH.")
+        print("    HIGH   — an AUTHORITATIVE corroboration: the change journal, or a disagreement between")
+        print("             two of the file's own hard-link names. A count of intrinsic signals never reaches HIGH.")
         print("    MEDIUM — CHANGE_LATE without PRE_FORMAT (created on THIS volume, metadata altered later),")
         print("             or FUTURE (created after the volume's last metadata write).")
         print("    INFO   — every signal present is one a timestamp-preserving copy also produces")
@@ -8342,9 +8357,9 @@ def cmd_timestomp(image, remaining, partition_start):
         print("    [AUTHORITATIVE]")
         print("      USN_BASIC_INFO_CHANGE  the USN journal recorded a deliberate basic-info edit (no content change)")
         print("      USN_CREATE_MISMATCH    $SI created differs from the FILE_CREATE journal record (true birth known)")
-        print("      HARDLINK_MACB_MISMATCH one hard-link name's $SI created diverges from a sibling's (ReFS per-name")
-        print("                             MACB); the LATEST sibling created is the authentic birth — only the")
-        print("                             back-dated name is flagged, never the clean sibling")
+        print("      HARDLINK_MACB_MISMATCH one hard-link name's $SI created diverges from another's (ReFS per-name")
+        print("                             MACB). Nothing routine produces this; which name is authentic is NOT")
+        print("                             established, and its absence means nothing")
         print("    [HEURISTIC — $SI only, corroborate]")
         print("      CHANGE_LATE            $SI change-time post-dates created/modified (SetFileTime/PowerShell/.NET")
         print("                             can't reach change-time) — defeated by a native-API/raw-disk stomp")
@@ -13413,8 +13428,8 @@ CMD_HELP = {
            ("--filter CATEGORY", "keep only one category: reparse, encrypted, compressed, integrity, ea,"),
            ("", "ads, wsl, sparse, snapshot, directory, resident, hardlink"),
            ("--cow-before IMAGE", "recover prior CoW versions by diffing against an earlier image"),
-           ("", "flags read TIER:SIGNAL — HIGH = authoritative (a hard-link sibling keeps the true"),
-           ("", "birth); MEDIUM/LOW are $SI heuristics that also fire on timestamp-preserving copies"),
+           ("", "flags read TIER:SIGNAL — HIGH = authoritative (the journal, or a file's own hard-link"),
+           ("", "names disagreeing); MEDIUM/LOW are $SI heuristics that also fire on timestamp-preserving copies"),
            ("--depth N", "cap directory recursion depth (default: full)"),
            ("-q, --quiet", "suppress stderr progress")],
   "ex": [("files --csv listing.csv", "full CSV file listing to a file"),
@@ -13561,7 +13576,7 @@ CMD_HELP = {
   "desc": ["Flags timestamps that LOOK anomalous (investigative INFORMATION, NOT proof of tampering). Each",
            "row shows a BASIS: an AUTHORITATIVE signal (USN journal FILE_CREATE / BASIC_INFO_CHANGE, or the",
            "ReFS-native HARDLINK_MACB_MISMATCH where two names of one file have divergent Created — only the",
-           "back-dated name is flagged, the sibling keeps the true birth) vs a HEURISTIC $SI-only signal",
+           "a file's own hard-link names disagree on Created) vs a HEURISTIC $SI-only signal",
            "(CHANGE_LATE / PRE_FORMAT / CREATE_GT_MODIFY / FUTURE) that also fires on legitimate timestamp-",
            "preserving copies. HIGH requires an AUTHORITATIVE source (the journal, or a hard-link sibling) --",
            "a count of heuristic signals never reaches it. MEDIUM is CHANGE_LATE without PRE_FORMAT, or FUTURE.",

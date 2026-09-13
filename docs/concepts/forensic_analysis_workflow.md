@@ -162,9 +162,10 @@ python3 forefst.py <image> files --cow-before earlier.raw # forward CoW version 
 ReFS carries one `$SI` timestamp set per **name** (Created/Modified/MFT-Changed/Accessed), not the two
 sets NTFS keeps per inode. For a single-named file there is no `$FILE_NAME` twin to compare, so NTFS's
 classic $SI-vs-$FN cross-check does not apply (step 7 replaces it). A **hard-linked** file, however, holds
-one independent timestamp copy per name, and a name-scoped timestomp leaves the sibling names at the true
-birth — so comparing MACB across a file's names is a ReFS-specific tamper check (journal-independent, and
-stronger than NTFS's $SI-vs-$FN, where all hard links share one `$SI` and cannot diverge; see step 7). A
+one independent timestamp copy per name, and those copies **can** diverge — where NTFS's hard links share
+a single `$SI` and cannot. Divergence between a file's names is evidence worth following; **agreement is
+not**, because calling `SetFileTime` through one name was measured to update every name at once (see
+step 7 and [Hard Links](hard_links.md)). A
 super-timeline merges three independent event sources: per-name **$SI MACB**, the
 **[USN change journal](../structures/usn_journal.md)** (the `$J` stream, under OID 0x520), and **MLog**
 durable-log transactions. USN and $SI carry exact FILETIMEs and join by OID; MLog times are embedded

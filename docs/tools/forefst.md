@@ -214,7 +214,7 @@ forefst.py disk.raw timeline --source USN --oid 0x701  # one object's USN histor
 
 ### `timestomp` — timestamp-anomaly detection
 
-Flags timestamp tampering by comparing intrinsic $SI MACB against USN-journal evidence and volume create/modify bounds; tiers each suspect HIGH/MEDIUM/LOW. It also emits `HARDLINK_MACB_MISMATCH` — a ReFS-native, **journal-independent** signal: because `$SI` is stored per name, two hard-link names of one file with divergent Created reveal a name-scoped timestomp (the latest Created is the true birth). Only the back-dated name is flagged, never the clean sibling.
+Flags timestamp tampering by comparing intrinsic $SI MACB against USN-journal evidence and volume create/modify bounds; tiers each suspect HIGH/MEDIUM/LOW. It also emits `HARDLINK_MACB_MISMATCH` — a ReFS-native, **journal-independent** signal: because `$SI` is stored per name, two hard-link names of one file can carry divergent Created values, which nothing routine produces. Which name holds the true birth is not established, and the signal's **absence means nothing** — a `SetFileTime` through one name updates every name at once.
 
 | Option | Description |
 |--------|-------------|
@@ -234,12 +234,12 @@ files, because that is what installing an operating system looks like.
 
 | Signal | Meaning | Base rate | Weight |
 |---|---|---|---|
-| `HARDLINK_MACB_MISMATCH` | one name of a multi-name file keeps a different birth time — ReFS keeps `$SI` **per name**, so a sibling preserves the truth. Journal-independent | **0.04 %** | **HIGH** |
+| `HARDLINK_MACB_MISMATCH` | two names of one file disagree on Created — ReFS keeps `$SI` **per name** and the copies can diverge. Journal-independent. Absence means nothing: one `SetFileTime` updates every name | **0.06 %** | **HIGH** |
 | `USN_BASIC_INFO_CHANGE` | the change journal recorded a basic-information write on this file | — | **HIGH** |
 | `USN_CREATE_MISMATCH` | the journal's create record disagrees with `$SI` | — | **HIGH** |
-| `CHANGE_LATE` | change time post-dates create/modify | 22.32 % | MEDIUM **only without** `PRE_FORMAT` |
-| `PRE_FORMAT` | created before this volume existed | 22.67 % | **INFO** (ambiguous — see below) |
-| `CREATE_GT_MODIFY` | created after the last write | 1.04 % | **INFO** |
+| `CHANGE_LATE` | change time post-dates create/modify | 21.83 % | MEDIUM **only without** `PRE_FORMAT` |
+| `PRE_FORMAT` | created before this volume existed | 22.17 % | **INFO** (ambiguous — see below) |
+| `CREATE_GT_MODIFY` | created after the last write | 1.69 % | **INFO** |
 | `FUTURE` | created after the volume's last metadata write | 4 files | MEDIUM |
 | `ROUND_TIMESTAMPS` | whole-second Created **and** Modified | — | never lifts a tier |
 
