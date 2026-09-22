@@ -26,10 +26,10 @@ ReFS Stream Snapshot Analysis
     Resident:     1600 bytes
     Snapshots:    2
 
-    [1] "sameaslastversion"
-        Stream size:   201 bytes
-    [2] "first"
+    [1] "first"
         Stream size:   186 bytes
+    [2] "sameaslastversion"
+        Stream size:   201 bytes
 
   FILE testsnapshots/test.txt
     Created:      2026-05-16 17:16:47 UTC
@@ -37,14 +37,14 @@ ReFS Stream Snapshot Analysis
     Resident:     2520 bytes
     Snapshots:    4
 
-    [1] "v3"
-        Stream size:   92 bytes
-    [2] "v2"
-        Stream size:   65 bytes
-    [3] "last"
-        Stream size:   5 bytes
-    [4] "firstversion"
+    [1] "firstversion"
         Stream size:   42 bytes
+    [2] "last"
+        Stream size:   5 bytes
+    [3] "v2"
+        Stream size:   65 bytes
+    [4] "v3"
+        Stream size:   92 bytes
 
   FILE testsnapshots/testads.txt
     Created:      2026-05-16 17:26:23 UTC
@@ -61,7 +61,7 @@ ReFS Stream Snapshot Analysis
     Resident:     1888 bytes
     Snapshots:    2
 
-    [1] "versionmodified"
-        Stream size:   3202036 bytes
-    [2] "copiedversion"
+    [1] "copiedversion"
         Stream size:   71395 bytes
+    [2] "versionmodified"
+        Stream size:   3202036 bytes

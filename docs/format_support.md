@@ -12,21 +12,21 @@ this table counts only measurements actually made, so it is a floor, not a ceili
 A number is how many verified statements in that area cover that format. Blank means nothing in
 that area was checked on it — which is a gap in the evidence, not a statement that ReFS differs.
 
-| Area | 3.4 | 3.7 | 3.9 | 3.10 | 3.14 | insider | scope not recorded |
-|---|---|---|---|---|---|---|---|
-| File records & attributes | 57 | 12 | 10 | 10 | 77 | 11 | 23 |
-| Journals & log | 49 | 3 | 1 | 2 | 55 | 2 | 7 |
-| B+-tree structure | 45 | 8 | 5 | 8 | 46 | 22 | 3 |
-| Object & container tables | 39 | 1 | 1 | 2 | 37 | 11 | 11 |
-| Boot & volume | 33 | 1 | 1 | 3 | 40 | 6 | 3 |
-| Checkpoints | 27 |  |  |  | 18 | 3 | 2 |
-| Other | 4 |  |  |  | 18 |  | 10 |
-| Security & links | 8 | 2 |  | 1 | 21 | 5 | 3 |
-| Architecture & driver | 12 |  |  |  | 11 |  | 4 |
-| Deletion & recovery | 3 |  |  |  | 6 |  | 4 |
-| Snapshots & CoW |  |  |  |  | 8 |  | 0 |
+| Area | 3.4 | 3.7 | 3.9 | 3.10 | 3.14 | scope not recorded |
+|---|---|---|---|---|---|---|
+| File records & attributes | 57 | 12 | 10 | 10 | 77 | 23 |
+| Journals & log | 49 | 3 | 1 | 2 | 55 | 7 |
+| B+-tree structure | 45 | 8 | 5 | 8 | 47 | 3 |
+| Object & container tables | 42 | 3 | 3 | 4 | 40 | 9 |
+| Boot & volume | 33 | 2 | 2 | 4 | 40 | 3 |
+| Checkpoints | 27 |  |  |  | 20 | 2 |
+| Other | 4 |  |  |  | 18 | 10 |
+| Security & links | 8 | 2 |  | 1 | 21 | 3 |
+| Architecture & driver | 12 |  |  |  | 11 | 4 |
+| Deletion & recovery | 3 |  |  |  | 6 | 4 |
+| Snapshots & CoW |  |  |  |  | 8 | 0 |
 
-**70 statements have no recorded verification scope.** They are counted in the last
+**68 statements have no recorded verification scope.** They are counted in the last
 column rather than dropped: leaving them out would make coverage look strongest exactly where it
 is least documented. Most are older entries whose record kept the date of the check but not the
 volumes it ran on.

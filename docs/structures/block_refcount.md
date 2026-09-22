@@ -23,6 +23,14 @@ activity.
 | 0x1C | 2,048 | Per-cluster refcount array (u16[1024]) | Spans **0x1C..0x81B**; one entry per cluster (4 KiB); bits 0–13 = refcount, bits 14–15 = flags |
 | 0x81C | 4 | Unknown (4 bytes) | Not padding: zero on most rows, structured content on the rest. Non-zero on 159 of 1,441 rows across 8 volumes, all of them format 3.14, in 15 distinct values whose **high half is always `0xFFFF`**. Meaning undetermined |
 
+**Two value forms.** The table above is the **long** form, 2,080 bytes when `BlockCount` is `0x400`. A
+**32-byte compact** form also exists: the same 28-byte header and the same 4-byte trailer, with the
+`u16[BlockCount]` array omitted (28 + 4 = 32). Measured on `winsider`: 108 rows, **106 long and 2
+compact**, both compact rows carrying a well-formed header (the key's `StartLCN`/`BlockCount` mirrored
+into the value at `+0x00`/`+0x08`), so they are a second encoding rather than damage. What the compact
+form *means* — whether it encodes a uniform refcount across the range — is not established: two rows on
+one volume cannot separate that reading from others.
+
 The normal value is **2,080 bytes (0x820)**: a 28-byte header (0x00..0x1B, including
 **TotalRefCount@0x18**) + the **u16[1024] array @ 0x1C..0x81B** (one entry per cluster) + a 4-byte
 trailing field @ 0x81C. The header's `TotalRefCount@0x18` equals the sum of the refcount fields across

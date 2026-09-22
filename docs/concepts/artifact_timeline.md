@@ -29,7 +29,9 @@ a file with N names has N *independent* timestamp copies — one in each name's 
 whereas NTFS keeps a single `$SI` that all hard links share. A name-scoped `SetFileTime` (opening
 names' copies **can** therefore hold different times, where NTFS's hard links cannot diverge at all
 because they share one `$SI`. A disagreement between a file's names is evidence worth following;
-agreement is not, because a `SetFileTime` through one name was measured to update every name at once. The [timestomp detection](timestomp_detection.md) page turns this into the
+agreement clears nothing, because the file's own record takes the new time for every name at once and
+each name's row is only a cache of it, refreshed when that name is opened — so any read of a sibling
+erases the difference. The [timestomp detection](timestomp_detection.md) page turns this into the
 `HARDLINK_MACB_MISMATCH` signal.
 
 The remaining four sources are not per-file metadata at all; they are **volume-level event and
@@ -252,7 +254,7 @@ timestamp; the only times are the operation FILETIMEs embedded in `_SmsRedoRecor
 dispatched by `CmsLogRedoQueue::PerformRedo`, with the time-bearing opcodes (`0x01`/`0x03`/`0x04`)
 stable across v3.4 and v3.14. The per-name `$SI` storage that makes a hard-linked file's names an
 intrinsic cross-check is disk-proven in one direction only: two names of one file were observed
-carrying different Created values (FN_LINK_003 / E59), but a later measurement found a `SetFileTime`
-through one name leaves both rows byte-identical, so agreement between names establishes nothing and the
-mechanism behind the observed divergence was never decompiled (MD_TS_RA_008). Also registered for statements on this page: **MD_ATTR_001**, **MD_TS_RA_004**. See [how this was verified](../methodology.md) to trace these to the
+carrying different Created values (FN_LINK_003 / E59); a later measurement found a `SetFileTime` through
+one name leaves both rows byte-identical when each name has been opened since, so agreement between names
+establishes nothing (MD_TS_RA_008). Also registered for statements on this page: **MD_ATTR_001**, **MD_TS_RA_004**. See [how this was verified](../methodology.md) to trace these to the
 exact images and measurements in `analysis/`.

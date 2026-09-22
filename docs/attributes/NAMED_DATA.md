@@ -19,7 +19,7 @@ directory-entry value (offset ≥ 0xA8).
 |--------|------|-------|-------------|
 | 0x00 | 4 | Marker | 0x80000002 |
 | 0x04 | 4 | Descriptor | 0x000500B0 |
-| 0x08 | var | Stream name | UTF-16LE, null-terminated |
+| 0x08 | var | Stream name | UTF-16LE, **not NUL-terminated** — its length comes from the key length. Measured: 0 of 254 type-0xB0 stream names and 0 of 3,830 reverse-index names carry a terminator. Worked case (`win11refs2g`, 38-byte key): `6a00…` value_length, marker `0x80000002`, type `0xB0` subtype `0x0005`, then 22 bytes of name ending `34 00` with no NUL |
 | — | 0–6 | Alignment padding | to `(offset − marker_start) % 8 == 4` |
 
 ### The key has two forms, and ReFS 3.4 uses the other one
@@ -44,7 +44,7 @@ reader must descend before it can even see them.
 | Offset | Size | Field | Description |
 |--------|------|-------|-------------|
 | 0x00 | 2 | Padding | 0 |
-| 0x02 | 2 | Attribute flags | 0x0000 for a plain ADS; 0x1000 marks an ADS that belongs to a file's stream set (it does **not** mean non-resident — such ADS are still inline). Bit 0x0400 (HasSnapshot) is set only on snapshot entries |
+| 0x02 | 2 | Attribute flags | 0x0000 for a plain ADS. **0x1000 marks the extent-backed form**: the value is the fixed 116-byte descriptor (`val[0x04] = 0x68`) with **no inline content**, and the data lives in extents — the same form described under [Residency](#residency). Measured over 5,667 ADS rows: **763 of 763** rows carrying the bit take that form, and **4,904 of 4,904** without it are variable-length with inline content — the correspondence is exact, with no counterexample either way. Bit 0x0400 (HasSnapshot) is set only on snapshot entries |
 | 0x04 | 4 | Data-area size | value length − 12 |
 | 0x08 | 4 | Content offset | 0x0C |
 | 0x0C | 4 | Summary size | 0x30 (48) |

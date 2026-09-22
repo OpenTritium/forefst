@@ -31,11 +31,9 @@ Data Area Summary
 ==============================================================================
 Redo Records
 ==============================================================================
-  Total records:      7223
-  Transaction starts: 2666
-  Transaction commits: 0  (commit is marked at the checkpoint/LogCore layer, not by a
-                          per-redo-record flag — this is 0 on every volume, healthy or not;
-                          do NOT read starts>commits as 'uncommitted work')
+  Total records:      45256
+  Transaction starts: 24107
+  Transaction commits: 24107
 
   The MLog is the volume's DURABLE TRANSACTION LOG. Operations logged here may not yet be
   checkpointed into the committed on-disk tree, so `files`/`summary` (which read the committed

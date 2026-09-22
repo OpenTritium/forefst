@@ -112,7 +112,7 @@ File Data Locations
             run: fvcn=0 VLCN=0xf392 PLCN=0x6f92 clusters=1 disk=0x70920000
             run: fvcn=1 VLCN=0xf393 PLCN=0x6f93 clusters=109 disk=0x70930000
             run: fvcn=110 VLCN=0xf800 PLCN=0x7000 clusters=914 disk=0x71000000
-            run: fvcn=1024 VLCN=0x400 PLCN=0x400 clusters=560 disk=0x5000000
+            hole: fvcn=1024 clusters=560 (no allocation — reads as zeros; sparse flag 0x20)
   INLINE    testintegrity/xbpt_marked_eveliselaurence_670394.txt
             size=182 (bytes stored in the record; record is embedded) — no clusters
   INLINE    testintegrity/xbpt_symlink_hotel_632659.lnk
@@ -798,7 +798,7 @@ File Data Locations
             run: fvcn=0 VLCN=0xe38e PLCN=0x678e clusters=1 disk=0x688e0000
             run: fvcn=1 VLCN=0xe38f PLCN=0x678f clusters=113 disk=0x688f0000
             run: fvcn=114 VLCN=0xe802 PLCN=0x6802 clusters=910 disk=0x69020000
-            run: fvcn=1024 VLCN=0x400 PLCN=0x400 clusters=352 disk=0x5000000
+            hole: fvcn=1024 clusters=352 (no allocation — reads as zeros; sparse flag 0x20)
   EXTENT    testintegrity/elvis_dir_record_449015/elvis_dir_lima_252141/elvis_dir_oscar_306778/xbpt_log_romeo_319918.txt
             record=embedded, size=8137, attrs=Archive, extents=1, clusters=1
             created=2026-05-19 20:00:56
@@ -1354,7 +1354,7 @@ File Data Locations
             run: fvcn=0 VLCN=0xeb92 PLCN=0x6b92 clusters=1 disk=0x6c920000
             run: fvcn=1 VLCN=0xeb93 PLCN=0x6b93 clusters=109 disk=0x6c930000
             run: fvcn=110 VLCN=0xf000 PLCN=0x6c00 clusters=914 disk=0x6d000000
-            run: fvcn=1024 VLCN=0x400 PLCN=0x400 clusters=1360 disk=0x5000000
+            hole: fvcn=1024 clusters=1360 (no allocation — reads as zeros; sparse flag 0x20)
   EXTENT    testintegrity/elvis_dir_victor_783323/xbpt_november_quebec_999278.md
             record=embedded, size=495412, attrs=Archive, extents=2, clusters=8
             created=2026-05-19 20:00:58

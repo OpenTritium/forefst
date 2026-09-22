@@ -526,7 +526,7 @@ ReFS Deleted File Finder
       Deleted from: /testintegrity/elvis_dir_record_449015/elvis_dir_papa_104235/elvis_dir_sync_718743/elvis_dir_gamma_603462  (table 0x770)
       Created:  2025-10-13 07:16:05 UTC
       Modified: 2025-10-13 07:16:05 UTC
-      Recoverable: metadata only (non-resident — file data is NOT in this remnant)
+      Recoverable: metadata + carve (non-resident — data is in on-disk extents; `export deleted --carve`)
     FILE xbpt_archive_archive_963000.bin  (non-resident, live-slack @ cluster 92 off 0x378)
       Deleted from: /testintegrity/elvis_dir_record_449015/elvis_dir_lima_252141/elvis_dir_oscar_306778/elvis_dir_cache_505509  (table 0x786)
       Created:  2023-03-16 07:16:35 UTC
@@ -546,7 +546,7 @@ ReFS Deleted File Finder
       Deleted from: /testintegrity/elvis_dir_index_149423/elvis_dir_victor_121923  (table 0x79c)
       Created:  2026-05-19 20:00:57 UTC
       Modified: 2026-05-19 20:00:57 UTC
-      Recoverable: metadata only (non-resident — file data is NOT in this remnant)
+      Recoverable: metadata + carve (non-resident — data is in on-disk extents; `export deleted --carve`)
     FILE xbpt_archive_sierra_974936.cfg  (non-resident, live-slack @ cluster 110 off 0x3a50)
       Deleted from: /testintegrity/elvis_dir_record_449015/elvis_dir_papa_104235  (table 0x78e)
       Created:  2026-05-19 20:00:56 UTC
@@ -556,7 +556,7 @@ ReFS Deleted File Finder
       Deleted from: /testintegrity/elvis_dir_record_449015/elvis_dir_lima_252141/elvis_dir_oscar_306778/elvis_dir_beta_984608  (table 0x77a)
       Created:  2026-05-19 20:00:52 UTC
       Modified: 2026-05-19 20:00:52 UTC
-      Recoverable: metadata only (non-resident — file data is NOT in this remnant)
+      Recoverable: metadata + carve (non-resident — data is in on-disk extents; `export deleted --carve`)
     FILE xbpt_archive_temp_427331.xml  (non-resident, live-slack @ cluster 60 off 0x64d0)
       Deleted from: /testintegrity/elvis_dir_record_449015/elvis_dir_papa_104235/elvis_dir_sync_718743/elvis_dir_gamma_109016  (table 0x773)
       Created:  2026-05-19 20:00:54 UTC
@@ -571,7 +571,7 @@ ReFS Deleted File Finder
       Deleted from: /testintegrity/elvis_dir_record_449015/elvis_dir_papa_104235/elvis_dir_sync_718743  (table 0x774)
       Created:  2026-05-19 20:00:57 UTC
       Modified: 2026-05-19 20:00:57 UTC
-      Recoverable: metadata only (non-resident — file data is NOT in this remnant)
+      Recoverable: metadata + carve (non-resident — data is in on-disk extents; `export deleted --carve`)
     FILE xbpt_audit_foxtrot_604743.xml  (non-resident, live-slack @ cluster 83 off 0x1bf8)
       Deleted from: /testintegrity/elvis_dir_record_449015/elvis_dir_papa_104235/elvis_dir_sync_718743/elvis_dir_gamma_109016/elvis_dir_zulu_984398/elvis_dir_cache_558805/elvis_dir_sierra_850083  (table 0x782)
       Created:  2025-04-02 07:16:24 UTC
@@ -586,7 +586,7 @@ ReFS Deleted File Finder
       Deleted from: /testintegrity/elvis_dir_record_449015/elvis_dir_papa_104235/elvis_dir_sync_718743/elvis_dir_gamma_109016/elvis_dir_zulu_984398/elvis_dir_cache_558805/elvis_dir_sierra_850083  (table 0x782)
       Created:  2026-05-19 20:00:53 UTC
       Modified: 2026-05-19 20:00:53 UTC
-      Recoverable: metadata only (non-resident — file data is NOT in this remnant)
+      Recoverable: metadata + carve (non-resident — data is in on-disk extents; `export deleted --carve`)
     FILE xbpt_backup_cache_508118.csv  (non-resident, live-slack @ cluster 58 off 0x9738)
       Deleted from: /testintegrity/elvis_dir_record_449015/elvis_dir_papa_104235/elvis_dir_sync_718743/elvis_dir_gamma_603462  (table 0x770)
       Created:  2026-05-19 20:00:54 UTC
@@ -601,7 +601,7 @@ ReFS Deleted File Finder
       Deleted from: /testintegrity/elvis_dir_record_449015/elvis_dir_papa_104235/elvis_dir_sync_718743  (table 0x774)
       Created:  2026-05-19 20:00:52 UTC
       Modified: 2026-05-19 20:00:52 UTC
-      Recoverable: metadata only (non-resident — file data is NOT in this remnant)
+      Recoverable: metadata + carve (non-resident — data is in on-disk extents; `export deleted --carve`)
     FILE xbpt_beta_backup_564672.csv  (non-resident, live-slack @ cluster 114 off 0x10a8)
       Deleted from: /testintegrity/elvis_dir_india_800575  (table 0x790)
       Created:  2026-05-19 20:00:54 UTC
@@ -611,7 +611,7 @@ ReFS Deleted File Finder
       Deleted from: /testintegrity/elvis_dir_record_449015/elvis_dir_papa_104235/elvis_dir_sync_718743/elvis_dir_gamma_109016/elvis_dir_zulu_984398/elvis_dir_cache_558805  (table 0x778)
       Created:  2026-05-19 20:00:52 UTC
       Modified: 2026-05-19 20:00:52 UTC
-      Recoverable: metadata only (non-resident — file data is NOT in this remnant)
+      Recoverable: metadata + carve (non-resident — data is in on-disk extents; `export deleted --carve`)
     FILE xbpt_beta_echo_315584.ini  (non-resident, live-slack @ cluster 573 off 0xf58)
       Deleted from: /testintegrity/elvis_dir_victor_783323  (table 0x784)
       Created:  2026-05-19 20:00:53 UTC
@@ -681,7 +681,7 @@ ReFS Deleted File Finder
       Deleted from: /testintegrity/elvis_dir_record_449015/elvis_dir_papa_104235/elvis_dir_sync_718743/elvis_dir_gamma_109016/elvis_dir_zulu_984398/elvis_dir_cache_558805/elvis_dir_sierra_850083  (table 0x782)
       Created:  2026-05-19 20:00:53 UTC
       Modified: 2026-05-19 20:00:53 UTC
-      Recoverable: metadata only (non-resident — file data is NOT in this remnant)
+      Recoverable: metadata + carve (non-resident — data is in on-disk extents; `export deleted --carve`)
     FILE xbpt_draft_romeo_160891.cfg  (non-resident, live-slack @ cluster 573 off 0x5980)
       Deleted from: /testintegrity/elvis_dir_victor_783323  (table 0x784)
       Created:  2026-05-19 20:00:51 UTC
@@ -696,7 +696,7 @@ ReFS Deleted File Finder
       Deleted from: /testintegrity/elvis_dir_india_800575  (table 0x790)
       Created:  2026-05-19 20:00:55 UTC
       Modified: 2026-05-19 20:00:55 UTC
-      Recoverable: metadata only (non-resident — file data is NOT in this remnant)
+      Recoverable: metadata + carve (non-resident — data is in on-disk extents; `export deleted --carve`)
     FILE xbpt_echo_foxtrot_782748.md  (non-resident, live-slack @ cluster 545 off 0xa18)
       Deleted from: /testintegrity/elvis_dir_record_449015/elvis_dir_papa_104235/elvis_dir_sync_718743/elvis_dir_gamma_603462/elvis_dir_quebec_218899  (table 0x775)
       Created:  2025-01-31 07:16:19 UTC
@@ -731,7 +731,7 @@ ReFS Deleted File Finder
       Deleted from: /testintegrity/elvis_dir_record_449015/elvis_dir_papa_104235/elvis_dir_sync_718743/elvis_dir_gamma_109016/elvis_dir_index_592790  (table 0x787)
       Created:  2026-05-19 20:00:54 UTC
       Modified: 2026-05-19 20:00:54 UTC
-      Recoverable: metadata only (non-resident — file data is NOT in this remnant)
+      Recoverable: metadata + carve (non-resident — data is in on-disk extents; `export deleted --carve`)
     FILE xbpt_gamma_beta_871678.log  (non-resident, live-slack @ cluster 72 off 0x33e8)
       Deleted from: /testintegrity/elvis_dir_record_449015/elvis_dir_lima_252141/elvis_dir_oscar_306778  (table 0x77e)
       Created:  2026-05-19 20:00:53 UTC
@@ -741,7 +741,7 @@ ReFS Deleted File Finder
       Deleted from: /testintegrity/elvis_dir_record_449015/elvis_dir_lima_252141/elvis_dir_oscar_306778  (table 0x77e)
       Created:  2026-05-19 20:00:52 UTC
       Modified: 2026-05-19 20:00:52 UTC
-      Recoverable: metadata only (non-resident — file data is NOT in this remnant)
+      Recoverable: metadata + carve (non-resident — data is in on-disk extents; `export deleted --carve`)
     FILE xbpt_hardlink_alpha_263601.log  (non-resident, live-slack @ cluster 58 off 0x1b38)
       Deleted from: /testintegrity/elvis_dir_record_449015/elvis_dir_papa_104235/elvis_dir_sync_718743/elvis_dir_gamma_603462  (table 0x770)
       Created:  2026-05-19 20:00:51 UTC
@@ -751,7 +751,7 @@ ReFS Deleted File Finder
       Deleted from: /testintegrity/elvis_dir_record_449015/elvis_dir_papa_104235/elvis_dir_sync_718743/elvis_dir_gamma_109016/elvis_dir_zulu_984398  (table 0x785)
       Created:  2026-05-19 20:00:54 UTC
       Modified: 2026-05-19 20:00:54 UTC
-      Recoverable: metadata only (non-resident — file data is NOT in this remnant)
+      Recoverable: metadata + carve (non-resident — data is in on-disk extents; `export deleted --carve`)
     FILE xbpt_hotel_india_732721.csv  (non-resident, live-slack @ cluster 114 off 0x378)
       Deleted from: /testintegrity/elvis_dir_india_800575  (table 0x790)
       Created:  2026-05-19 20:00:54 UTC
@@ -761,7 +761,7 @@ ReFS Deleted File Finder
       Deleted from: /testintegrity/elvis_dir_record_449015/elvis_dir_papa_104235  (table 0x78e)
       Created:  2026-05-19 20:00:56 UTC
       Modified: 2026-05-19 20:00:56 UTC
-      Recoverable: metadata only (non-resident — file data is NOT in this remnant)
+      Recoverable: metadata + carve (non-resident — data is in on-disk extents; `export deleted --carve`)
     FILE xbpt_index_report_220394.cfg  (non-resident, live-slack @ cluster 573 off 0x1540)
       Deleted from: /testintegrity/elvis_dir_victor_783323  (table 0x784)
       Created:  2026-05-19 20:00:53 UTC
@@ -771,12 +771,12 @@ ReFS Deleted File Finder
       Deleted from: /testintegrity/elvis_dir_record_449015/elvis_dir_papa_104235/elvis_dir_sync_718743/elvis_dir_gamma_603462  (table 0x770)
       Created:  2025-10-13 07:16:05 UTC
       Modified: 2025-10-13 07:16:05 UTC
-      Recoverable: metadata only (non-resident — file data is NOT in this remnant)
+      Recoverable: metadata + carve (non-resident — data is in on-disk extents; `export deleted --carve`)
     FILE xbpt_india_cache_358425.dat  (non-resident, live-slack @ cluster 60 off 0x44b0)
       Deleted from: /testintegrity/elvis_dir_record_449015/elvis_dir_papa_104235/elvis_dir_sync_718743/elvis_dir_gamma_109016  (table 0x773)
       Created:  2026-05-19 20:00:53 UTC
       Modified: 2026-05-19 20:00:53 UTC
-      Recoverable: metadata only (non-resident — file data is NOT in this remnant)
+      Recoverable: metadata + carve (non-resident — data is in on-disk extents; `export deleted --carve`)
     FILE xbpt_india_data_923399.xml  (non-resident, live-slack @ cluster 578 off 0xbf8)
       Deleted from: /testintegrity/elvis_dir_index_149423  (table 0x78f)
       Created:  2026-05-19 20:00:54 UTC
@@ -791,12 +791,12 @@ ReFS Deleted File Finder
       Deleted from: /testintegrity/elvis_dir_victor_783323  (table 0x784)
       Created:  2026-05-19 20:00:53 UTC
       Modified: 2026-05-19 20:00:54 UTC
-      Recoverable: metadata only (non-resident — file data is NOT in this remnant)
+      Recoverable: metadata + carve (non-resident — data is in on-disk extents; `export deleted --carve`)
     FILE xbpt_kilo_kilo_772105.txt  (non-resident, live-slack @ cluster 58 off 0x59c8)
       Deleted from: /testintegrity/elvis_dir_record_449015/elvis_dir_papa_104235/elvis_dir_sync_718743/elvis_dir_gamma_603462  (table 0x770)
       Created:  2024-12-14 07:16:17 UTC
       Modified: 2026-05-19 20:00:53 UTC
-      Recoverable: metadata only (non-resident — file data is NOT in this remnant)
+      Recoverable: metadata + carve (non-resident — data is in on-disk extents; `export deleted --carve`)
     FILE xbpt_kilo_trace_156900.tmp  (non-resident, live-slack @ cluster 60 off 0x1560)
       Deleted from: /testintegrity/elvis_dir_record_449015/elvis_dir_papa_104235/elvis_dir_sync_718743/elvis_dir_gamma_109016  (table 0x773)
       Created:  2026-05-19 20:00:51 UTC
@@ -811,7 +811,7 @@ ReFS Deleted File Finder
       Deleted from: /testintegrity/elvis_dir_record_449015/elvis_dir_lima_252141/elvis_dir_oscar_306778  (table 0x77e)
       Created:  2022-05-20 07:16:16 UTC
       Modified: 2022-05-20 07:16:16 UTC
-      Recoverable: metadata only (non-resident — file data is NOT in this remnant)
+      Recoverable: metadata + carve (non-resident — data is in on-disk extents; `export deleted --carve`)
     FILE xbpt_lima_mike_416685.csv  (non-resident, live-slack @ cluster 573 off 0x378)
       Deleted from: /testintegrity/elvis_dir_victor_783323  (table 0x784)
       Created:  2026-05-19 20:00:53 UTC
@@ -821,7 +821,7 @@ ReFS Deleted File Finder
       Deleted from: /testintegrity/elvis_dir_record_449015/elvis_dir_papa_104235/elvis_dir_sync_718743/elvis_dir_gamma_109016/elvis_dir_index_592790  (table 0x787)
       Created:  2026-05-19 20:00:54 UTC
       Modified: 2026-05-19 20:00:54 UTC
-      Recoverable: metadata only (non-resident — file data is NOT in this remnant)
+      Recoverable: metadata + carve (non-resident — data is in on-disk extents; `export deleted --carve`)
     FILE xbpt_log_log_475663.dat  (non-resident, live-slack @ cluster 58 off 0x4110)
       Deleted from: /testintegrity/elvis_dir_record_449015/elvis_dir_papa_104235/elvis_dir_sync_718743/elvis_dir_gamma_603462  (table 0x770)
       Created:  2026-05-19 20:00:51 UTC
@@ -926,17 +926,17 @@ ReFS Deleted File Finder
       Deleted from: /testintegrity/elvis_dir_record_449015/elvis_dir_papa_104235/elvis_dir_sync_718743/elvis_dir_gamma_109016/elvis_dir_zulu_984398/elvis_dir_cache_558805/elvis_dir_sierra_850083  (table 0x782)
       Created:  2026-05-19 20:00:53 UTC
       Modified: 2026-05-19 20:00:53 UTC
-      Recoverable: metadata only (non-resident — file data is NOT in this remnant)
+      Recoverable: metadata + carve (non-resident — data is in on-disk extents; `export deleted --carve`)
     FILE xbpt_report_whiskey_438679.dat  (non-resident, live-slack @ cluster 72 off 0x1a80)
       Deleted from: /testintegrity/elvis_dir_record_449015/elvis_dir_lima_252141/elvis_dir_oscar_306778  (table 0x77e)
       Created:  2026-05-19 20:00:52 UTC
       Modified: 2026-05-19 20:00:52 UTC
-      Recoverable: metadata only (non-resident — file data is NOT in this remnant)
+      Recoverable: metadata + carve (non-resident — data is in on-disk extents; `export deleted --carve`)
     FILE xbpt_romeo_output_514691.txt  (non-resident, live-slack @ cluster 550 off 0x27c8)
       Deleted from: /testintegrity/elvis_dir_record_449015/elvis_dir_papa_104235/elvis_dir_sync_718743/elvis_dir_gamma_109016/elvis_dir_zulu_984398/elvis_dir_cache_558805  (table 0x778)
       Created:  2026-05-19 20:00:52 UTC
       Modified: 2026-05-19 20:00:52 UTC
-      Recoverable: metadata only (non-resident — file data is NOT in this remnant)
+      Recoverable: metadata + carve (non-resident — data is in on-disk extents; `export deleted --carve`)
     FILE xbpt_romeo_temp_949964.dat  (non-resident, live-slack @ cluster 60 off 0xf78)
       Deleted from: /testintegrity/elvis_dir_record_449015/elvis_dir_papa_104235/elvis_dir_sync_718743/elvis_dir_gamma_109016  (table 0x773)
       Created:  2021-10-05 07:16:06 UTC
@@ -951,7 +951,7 @@ ReFS Deleted File Finder
       Deleted from: /testintegrity/elvis_dir_record_449015/elvis_dir_papa_104235/elvis_dir_sync_718743/elvis_dir_gamma_109016  (table 0x773)
       Created:  2026-05-19 20:00:55 UTC
       Modified: 2026-05-19 20:00:55 UTC
-      Recoverable: metadata only (non-resident — file data is NOT in this remnant)
+      Recoverable: metadata + carve (non-resident — data is in on-disk extents; `export deleted --carve`)
     FILE xbpt_sync_echo_229861.md  (non-resident, live-slack @ cluster 60 off 0x5308)
       Deleted from: /testintegrity/elvis_dir_record_449015/elvis_dir_papa_104235/elvis_dir_sync_718743/elvis_dir_gamma_109016  (table 0x773)
       Created:  2026-05-19 20:00:53 UTC
@@ -961,7 +961,7 @@ ReFS Deleted File Finder
       Deleted from: /testintegrity/elvis_dir_record_449015/elvis_dir_papa_104235/elvis_dir_sync_718743  (table 0x774)
       Created:  2022-03-06 07:16:22 UTC
       Modified: 2022-03-06 07:16:22 UTC
-      Recoverable: metadata only (non-resident — file data is NOT in this remnant)
+      Recoverable: metadata + carve (non-resident — data is in on-disk extents; `export deleted --carve`)
     FILE xbpt_tango_archive_240492.tmp  (non-resident, live-slack @ cluster 60 off 0x32e8)
       Deleted from: /testintegrity/elvis_dir_record_449015/elvis_dir_papa_104235/elvis_dir_sync_718743/elvis_dir_gamma_109016  (table 0x773)
       Created:  2026-05-19 20:00:52 UTC
@@ -981,7 +981,7 @@ ReFS Deleted File Finder
       Deleted from: /testintegrity/elvis_dir_record_449015/elvis_dir_papa_104235/elvis_dir_sync_718743  (table 0x774)
       Created:  2026-05-19 20:00:52 UTC
       Modified: 2026-05-19 20:00:52 UTC
-      Recoverable: metadata only (non-resident — file data is NOT in this remnant)
+      Recoverable: metadata + carve (non-resident — data is in on-disk extents; `export deleted --carve`)
     FILE xbpt_temp_data_760681.xml  (non-resident, live-slack @ cluster 118 off 0x1688)
       Deleted from: /testintegrity/elvis_dir_record_449015/elvis_dir_lima_252141  (table 0x797)
       Created:  2026-05-19 20:00:56 UTC
@@ -991,22 +991,22 @@ ReFS Deleted File Finder
       Deleted from: /testintegrity/elvis_dir_record_449015/elvis_dir_papa_104235/elvis_dir_sync_718743/elvis_dir_gamma_603462  (table 0x770)
       Created:  2026-05-19 20:00:51 UTC
       Modified: 2026-05-19 20:00:51 UTC
-      Recoverable: metadata only (non-resident — file data is NOT in this remnant)
+      Recoverable: metadata + carve (non-resident — data is in on-disk extents; `export deleted --carve`)
     FILE xbpt_trace_echo_135772.csv  (non-resident, live-slack @ cluster 72 off 0x2118)
       Deleted from: /testintegrity/elvis_dir_record_449015/elvis_dir_lima_252141/elvis_dir_oscar_306778  (table 0x77e)
       Created:  2022-05-20 07:16:16 UTC
       Modified: 2022-05-20 07:16:16 UTC
-      Recoverable: metadata only (non-resident — file data is NOT in this remnant)
+      Recoverable: metadata + carve (non-resident — data is in on-disk extents; `export deleted --carve`)
     FILE xbpt_trace_index_613763.tmp  (non-resident, live-slack @ cluster 61 off 0x7cf0)
       Deleted from: /testintegrity/elvis_dir_record_449015/elvis_dir_papa_104235/elvis_dir_sync_718743  (table 0x774)
       Created:  2022-03-06 07:16:22 UTC
       Modified: 2022-03-06 07:16:22 UTC
-      Recoverable: metadata only (non-resident — file data is NOT in this remnant)
+      Recoverable: metadata + carve (non-resident — data is in on-disk extents; `export deleted --carve`)
     FILE xbpt_trace_yankee_986396.csv  (non-resident, live-slack @ cluster 61 off 0x23c8)
       Deleted from: /testintegrity/elvis_dir_record_449015/elvis_dir_papa_104235/elvis_dir_sync_718743  (table 0x774)
       Created:  2026-05-19 20:00:52 UTC
       Modified: 2026-05-19 20:00:52 UTC
-      Recoverable: metadata only (non-resident — file data is NOT in this remnant)
+      Recoverable: metadata + carve (non-resident — data is in on-disk extents; `export deleted --carve`)
     FILE xbpt_uniform_backup_459285.xml  (non-resident, live-slack @ cluster 60 off 0x7158)
       Deleted from: /testintegrity/elvis_dir_record_449015/elvis_dir_papa_104235/elvis_dir_sync_718743/elvis_dir_gamma_109016  (table 0x773)
       Created:  2026-05-19 20:00:54 UTC
@@ -1051,7 +1051,7 @@ ReFS Deleted File Finder
       Deleted from: /testintegrity/elvis_dir_record_449015/elvis_dir_papa_104235/elvis_dir_sync_718743/elvis_dir_gamma_109016  (table 0x773)
       Created:  2026-05-19 20:00:51 UTC
       Modified: 2026-05-19 20:00:51 UTC
-      Recoverable: metadata only (non-resident — file data is NOT in this remnant)
+      Recoverable: metadata + carve (non-resident — data is in on-disk extents; `export deleted --carve`)
     FILE xbpt_whiskey_data_874109.dat  (non-resident, live-slack @ cluster 58 off 0x2e70)
       Deleted from: /testintegrity/elvis_dir_record_449015/elvis_dir_papa_104235/elvis_dir_sync_718743/elvis_dir_gamma_603462  (table 0x770)
       Created:  2024-08-15 07:16:05 UTC
@@ -1066,7 +1066,7 @@ ReFS Deleted File Finder
       Deleted from: /testintegrity/elvis_dir_victor_783323  (table 0x784)
       Created:  2026-05-19 20:00:53 UTC
       Modified: 2026-05-19 20:00:54 UTC
-      Recoverable: metadata only (non-resident — file data is NOT in this remnant)
+      Recoverable: metadata + carve (non-resident — data is in on-disk extents; `export deleted --carve`)
     FILE xbpt_yankee_archive_557245.md  (non-resident, live-slack @ cluster 58 off 0x378)
       Deleted from: /testintegrity/elvis_dir_record_449015/elvis_dir_papa_104235/elvis_dir_sync_718743/elvis_dir_gamma_603462  (table 0x770)
       Created:  2026-05-19 20:00:51 UTC
@@ -1081,12 +1081,12 @@ ReFS Deleted File Finder
       Deleted from: /testintegrity/elvis_dir_record_449015/elvis_dir_papa_104235/elvis_dir_sync_718743/elvis_dir_gamma_603462  (table 0x770)
       Created:  2026-05-19 20:00:51 UTC
       Modified: 2026-05-19 20:00:52 UTC
-      Recoverable: metadata only (non-resident — file data is NOT in this remnant)
+      Recoverable: metadata + carve (non-resident — data is in on-disk extents; `export deleted --carve`)
     FILE xbpt_yankee_kilo_634787.dat  (non-resident, live-slack @ cluster 554 off 0x970)
       Deleted from: /testintegrity/elvis_dir_record_449015/elvis_dir_lima_252141/elvis_dir_oscar_306778/elvis_dir_beta_984608  (table 0x77a)
       Created:  2026-05-19 20:00:52 UTC
       Modified: 2026-05-19 20:00:52 UTC
-      Recoverable: metadata only (non-resident — file data is NOT in this remnant)
+      Recoverable: metadata + carve (non-resident — data is in on-disk extents; `export deleted --carve`)
     FILE xbpt_yankee_log_978386.xml  (non-resident, live-slack @ cluster 58 off 0x9150)
       Deleted from: /testintegrity/elvis_dir_record_449015/elvis_dir_papa_104235/elvis_dir_sync_718743/elvis_dir_gamma_603462  (table 0x770)
       Created:  2026-05-19 20:00:54 UTC
@@ -1101,7 +1101,7 @@ ReFS Deleted File Finder
       Deleted from: /testintegrity/elvis_dir_record_449015/elvis_dir_papa_104235/elvis_dir_sync_718743/elvis_dir_gamma_109016  (table 0x773)
       Created:  2026-05-19 20:00:52 UTC
       Modified: 2026-05-19 20:00:52 UTC
-      Recoverable: metadata only (non-resident — file data is NOT in this remnant)
+      Recoverable: metadata + carve (non-resident — data is in on-disk extents; `export deleted --carve`)
     FILE xbpt_zulu_temp_484448.tmp  (non-resident, live-slack @ cluster 60 off 0x9700)
       Deleted from: /testintegrity/elvis_dir_record_449015/elvis_dir_papa_104235/elvis_dir_sync_718743/elvis_dir_gamma_109016  (table 0x773)
       Created:  2026-05-19 20:00:51 UTC
@@ -1541,7 +1541,7 @@ ReFS Deleted File Finder
   Also: `deleted --orphans` adds a low-confidence tier for OID-Table objects unlinked from the tree.
   Prior versions of files that still exist: `snapshots`.  Windows Recycle Bin: `recyclebin`.
 
-  DELETED files: 5 of 219 are INLINE with full content recoverable; 35 are extent-backed (carve-able with --carve).
+  DELETED files: 5 of 219 are INLINE with full content recoverable; 69 are extent-backed (carve-able with --carve).
   PRIOR versions of live files: 114 of 408 decode to a file.
   Restorability: a RESIDENT deleted file's FULL content is recovered exactly (content/<name>).
        A NON-RESIDENT file keeps its data in on-disk extents — if the extent map survives

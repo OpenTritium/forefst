@@ -55,9 +55,11 @@ as non-resident type-0x40 entries**:
 > [Directory Entries](../structures/directory_entries.md)) and `0x00010028` at **value+0x04** — not two
 > different sub-records.
 
-Each 24-byte extent: `0x00` VLCN (needs Container-Table translation), `0x08` flags (0x180040 = standard
-data-run; 0x1c00d0 = integrity checksum-page entry, run_length 1; other variants),
-`0x0C` file_vcn, `0x14` run_length.
+Each extent entry: `0x00` VLCN (needs Container-Table translation), `0x08` flags, `0x0A` **record size**,
+`0x0C` file_vcn, `0x14` run_length. The u32 read at `0x08` therefore carries `flags | record_size << 16`,
+which is why the values look like `0x180040` rather than `0x40`. Record size is `24` for a plain data run
+and `24 + run*4` when the entry carries **one CRC-32C per cluster** (flags bit 0x80) — see
+[Extent descriptors](../structures/extent_descriptors.md). Flags bit 0x20 marks a sparse hole.
 
 **Procedure:** read `data_sub_id` → find the `$DATA` sub-record → parse its extents → **sort by
 `file_vcn`** → **translate each VLCN → PLCN via the Container Table** → read `run_length` clusters per

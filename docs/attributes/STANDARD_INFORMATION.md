@@ -15,9 +15,9 @@ version, so a parser must know the version first.
 |--------|------|-------|-------------|
 | 0x00 | 8 | Creation time | FILETIME (100 ns since 1601-01-01) |
 | 0x08 | 8 | Modification time | last content modification |
-| 0x10 | 8 | MFT change time | last metadata modification |
+| 0x10 | 8 | MFT change time | last metadata modification. **For a directory this is not the value Windows reports** — Windows reports the copy held in the directory's own index entry (type-0x30 `key_flags` 0x02, `value+0x20`). The two disagree on **994 of 86,955 directories (1.14 %)** across 106 of 141 images, and against PowerShell ground truth on `lab314_main` the index-entry copy matched Windows and the own row did not — with **0 cases anywhere in the corpus of the reverse**. For files the two agree. `forefst` already reports the index-entry value |
 | 0x18 | 8 | Last access time | not updated on read by default |
-| 0x20 | 4 | File attributes | Win32 `FILE_ATTRIBUTE_*`. Bit 28 (the ReFS directory flag) is masked on Win10, preserved on Win11 |
+| 0x20 | 4 | File attributes | Win32 `FILE_ATTRIBUTE_*`. Bit 28 (the ReFS directory flag) is carried here only on volumes written by Win10-era ReFS — **formats 3.4, 3.7 and 3.9** — and is inherited by a volume upgraded from one. On **3.10 and on natively-formatted 3.14** a directory's own row never carries it; there the flag lives only in the **index entry at `value+0x40`**, which carries it on every directory of every format. Bit 28 is the only attribute bit that ever differs between the two copies |
 | 0x24 | 4 | Internal flags | 6-bit field on v3.14+; 0 on v3.4–v3.10 (see [Internal flags](#internal-flags)) |
 | 0x28 | 8 | Security ID | resolves directly in the security table (OID 0x530) |
 | 0x30 | 8 | USN slot — **unpopulated** | Always 0 in the type-0x10 `$SI` (0 non-zero across 32,629 own-rows). The live per-file→journal link is **LastUsn** at 0x40 |
@@ -34,7 +34,7 @@ version, so a parser must know the version first.
 | 0x58 | 8 | NextFileId ordinal (ExternalFileId_1) | the directory child-creation ordinal (see [NextFileId ordinal](#nextfileid-ordinal)); non-zero on every v3.4 entry |
 | 0x60 | 8 | ExternalFileId_2 | cross-volume file-identity word; normally 0 same-volume, carries the source-volume id only for cross-volume-copied content. Co-occurs with ExternalFileId_3 |
 | 0x68 | 8 | ExternalFileId_3 | the source parent-directory OID; 0 if same-volume |
-| 0x70 | 4 | HardLinkCount | **always 1 on disk** — a resident-layout field; genuine hard links are non-resident and counted by the shared FileId (§J). The increment path exists but is unexercised |
+| 0x70 | 4 | HardLinkCount | **1 in an embedded record** (329,120 of 329,120 rows over 141 images) but **the real link count in a type-0x40 backing** — over 107,525 backings it reads >1 on 101,252 (94.2 %) and equals the number of size-matched names on 99.84 %; on the `fsutil`-ground-truthed volume the three backings read 4/2/1 against fsutil's 4/2/1. See [Hard links](../concepts/hard_links.md) |
 
 ### v3.7+ extension (Win11) — total 124 bytes (0x7C)
 
@@ -43,7 +43,7 @@ version, so a parser must know the version first.
 | 0x58 | 8 | NextFileId ordinal | the directory child-creation ordinal; persisted to the own-row only when version < 0x30b (v3.11), so **0 on native v3.14 own-rows** while resident files stay populated. See [NextFileId ordinal](#nextfileid-ordinal) |
 | 0x60 | 8 | ExternalFileId_2 | cross-volume file-identity word; 0 on native v3.7+, non-zero only as upgrade carryover. A same-volume move does **not** set it (the driver checks the origin *volume*, not the directory) — a moved file's home is carried by its non-resident directory entry, not here |
 | 0x68 | 8 | ExternalFileId_3 | source parent-directory OID; 0 on native v3.7+, non-zero only as upgrade carryover; a same-volume move leaves it 0 |
-| 0x70 | 4 | HardLinkCount | read from FCB+0xb4; **always 1 on disk** (hard links promote to non-resident, counted by the shared FileId — §J). On a **non-resident** own-row it reads 0 and is re-sourced from the resident FCB — do not treat 0 as corruption |
+| 0x70 | 4 | HardLinkCount | read from FCB+0xb4. **1 in an embedded record** (329,120 of 329,120 rows over 141 images) but **the real link count in a type-0x40 backing** — over 107,525 backings it reads >1 on 101,252 (94.2 %) and equals the number of size-matched names on 99.84 %; on the `fsutil`-ground-truthed volume the three backings read 4/2/1 against fsutil's 4/2/1. See [Hard links](../concepts/hard_links.md). A backing that reads 0 (38 of 107,525) is re-sourced from the resident FCB — do not treat 0 as corruption |
 | 0x74 | 8 | NextStreamSetId | per-file next-stream-set-ID allocator, base 0xF000; non-zero only on a file owning an extra stream set |
 
 The mapper enforces the size: a Win10 driver requires `value > 0x73` (≥116 B), a Win11 driver requires
@@ -72,7 +72,9 @@ non-zero), and non-zero only on a volume with an active USN journal (v3.14+):
 - **`$SI+0x40` = LastUsn** — the byte offset of the file's most recent record in `$UsnJrnl:$J`, taken from
   the journal write cursor (VCB+0x3a0) and cached in FCB+0xe0. Always 8-byte aligned.
 - **`$SI+0x48` = UsnJournalId** — a FILETIME identifying the journal instance (VCB+0x388), one distinct
-  value per volume.
+  value per volume. **It does not change when the journal is re-created**: measured on `lab314_main`,
+  `fsutil usn createjournal` restarted USNs at 0 under the *same* id, so this field cannot be used to
+  detect that a stale `LastUsn` now points into a different numbering epoch.
 - The pair is gated by **FCB bit 23** ("the cached LastUsn is valid for the current journal epoch": set
   only when the journal is active *and* the on-disk UsnJournalId matches the current journal — a
   stale-epoch check, like NTFS journal-ID validation). Both are written by

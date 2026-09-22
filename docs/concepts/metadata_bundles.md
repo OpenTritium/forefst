@@ -69,7 +69,7 @@ Every manifest records provenance, because a derived artefact has to name what i
 | field | |
 |---|---|
 | `tool`, `tool_version` | what wrote it |
-| `source_path`, `source_size_bytes`, `source_content_pin` | which image, identified by content rather than by name |
+| `source_path`, `source_size_bytes`, `source_content_pin` | which image — the pin is a SHA-256 over the image size, its first 64 KiB (MBR/GPT), the primary superblock and both checkpoint clusters, so two states of one volume (before/after activity) produce different pins; it is a bootstrap-state fingerprint, not a whole-image hash |
 | `exported_utc`, `host` | when and where |
 | `absent_pages` | pages that could **not** be read at export time — already missing before the bundle existed |
 | `source_holes` | ranges the source image stored as holes when it was read |

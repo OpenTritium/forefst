@@ -3,13 +3,13 @@
 ==============================================================================
 ReFS Super-Timeline — wininsiderrefs8gtest2.raw
 ==============================================================================
-  Sources merged: USN=0  MLog=616  $SI-MACB=3576  (time-sorted; correlated by name/path —
+  Sources merged: USN=0  MLog=1983  $SI-MACB=3576  (time-sorted; correlated by name/path —
                   a file has no OID: $SI shows OID —, USN the home-dir OID, MLog the target OID)
   NOTE: USN journal inactive on this image — timeline is $SI + MLog only.
   Caveat: USN and $SI carry exact FILETIMEs. MLog has NO wall-clock time — an MLog row's time is
           the affected object's embedded $SI birth (approximate; for a RENAME/MOVE it is the object
           birth, not the op time). MLog times that predate the volume are undated + marked.
-          (5 MLog rows had an impossible pre-volume time → undated.)
+          (7 MLog rows had an impossible pre-volume time → undated.)
 ------------------------------------------------------------------------------
   Timestamp (UTC)          Src    OID         Name/Path                   Event
   ----------------------------------------------------------------------------
@@ -177,8 +177,11 @@ ReFS Super-Timeline — wininsiderrefs8gtest2.raw
   2026-03-01 07:16:07 UTC  $SI    —           testintegrity/elvis_dir_…   Created
   2026-03-01 07:16:07 UTC  $SI    —           testintegrity/elvis_dir_…   Modified
   2026-03-01 07:16:07 UTC  $SI    —           testintegrity/elvis_dir_…   Accessed
-  2026-05-19 19:56:46 UTC  MLog   —                                       MODIFY
-  2026-05-19 19:56:46 UTC  MLog   —                                       MODIFY
+  2026-05-19 19:56:47 UTC  MLog   —                                       MODIFY
+  2026-05-19 19:56:47 UTC  MLog   —                                       MODIFY
+  2026-05-19 19:56:47 UTC  MLog   0x600       /                           WRITE
+  2026-05-19 19:56:47 UTC  MLog   0x600       /                           MODIFY
+  2026-05-19 19:56:47 UTC  MLog   0x600       /                           WRITE
   2026-05-19 19:56:47 UTC  MLog   0x600       /                           WRITE
   2026-05-19 19:56:47 UTC  $SI    0x701       System Volume Information   Created
   2026-05-19 19:56:47 UTC  $SI    0x701       System Volume Information   Modified
@@ -186,32 +189,29 @@ ReFS Super-Timeline — wininsiderrefs8gtest2.raw
   2026-05-19 19:56:47 UTC  $SI    0x701       System Volume Information   Accessed
   2026-05-19 19:56:47 UTC  $SI    —           System Volume Informatio…   Created
   2026-05-19 19:56:47 UTC  MLog   0x701       /System Volume Informati…   CREATE
+  2026-05-19 19:56:47 UTC  MLog   0x701       /System Volume Informati…   CREATE
+  2026-05-19 19:56:47 UTC  MLog   0x701       /System Volume Informati…   WRITE
   2026-05-19 19:56:47 UTC  $SI    —           System Volume Informatio…   Modified
   2026-05-19 19:56:47 UTC  $SI    —           System Volume Informatio…   Metadata-Changed
   2026-05-19 19:56:47 UTC  $SI    —           System Volume Informatio…   Accessed
   2026-05-19 19:57:27 UTC  $SI    0x702       testspecials                Created
   2026-05-19 19:57:27 UTC  MLog   0x702       /testspecials               CREATE
+  2026-05-19 19:57:27 UTC  MLog   0x600       /                           MODIFY
   2026-05-19 19:57:27 UTC  $SI    —           testspecials/archive_alp…   Created
+  2026-05-19 19:57:27 UTC  MLog   0x702       /testspecials               STREAM_UPD
+  2026-05-19 19:57:27 UTC  MLog   0x702       /testspecials               STREAM_UPD
   2026-05-19 19:57:27 UTC  $SI    —           testspecials/dir_record_…   Modified
   2026-05-19 19:57:27 UTC  $SI    —           testspecials/dir_record_…   Metadata-Changed
   2026-05-19 19:57:27 UTC  $SI    —           testspecials/dir_gamma_6…   Created
   2026-05-19 19:57:27 UTC  $SI    —           testspecials/dir_record_…   Created
   2026-05-19 19:57:27 UTC  $SI    —           testspecials/mike_mike_6…   Created
-  2026-05-19 19:57:27 UTC  MLog   0x702       /testspecials               CREATE
+  2026-05-19 19:57:27 UTC  MLog   0x702       /testspecials               STREAM_UPD
   2026-05-19 19:57:27 UTC  $SI    —           testspecials/dir_record_…   Created
+  2026-05-19 19:57:27 UTC  MLog   0x702       /testspecials               CREATE
+  2026-05-19 19:57:27 UTC  MLog   0x702       /testspecials               STREAM_UPD
   2026-05-19 19:57:27 UTC  $SI    —           testspecials/dir_config_…   Created
   2026-05-19 19:57:27 UTC  $SI    —           testspecials/dir_record_…   Created
   2026-05-19 19:57:27 UTC  $SI    —           testspecials/dir_record_…   Created
   2026-05-19 19:57:27 UTC  $SI    —           testspecials/temp_draft_…   Created
-  2026-05-19 19:57:27 UTC  MLog   0x702       /testspecials               CREATE
-  2026-05-19 19:57:28 UTC  $SI    0x703       testspecials/dir_record_…   Created
-  2026-05-19 19:57:28 UTC  $SI    0x704       testspecials/dir_record_…   Created
-  2026-05-19 19:57:28 UTC  $SI    —           testspecials/dir_oscar_2…   Created
-  2026-05-19 19:57:28 UTC  $SI    —           testspecials/dir_oscar_2…   Modified
-  2026-05-19 19:57:28 UTC  $SI    —           testspecials/dir_oscar_2…   Accessed
-  2026-05-19 19:57:28 UTC  $SI    —           testspecials/dir_oscar_2…   Created
-  2026-05-19 19:57:28 UTC  $SI    —           testspecials/dir_oscar_2…   Modified
-  2026-05-19 19:57:28 UTC  $SI    —           testspecials/dir_oscar_2…   Accessed
-  2026-05-19 19:57:28 UTC  $SI    —           testspecials/dir_record_…   Created
 ------------------------------------------------------------------------------
   200 events

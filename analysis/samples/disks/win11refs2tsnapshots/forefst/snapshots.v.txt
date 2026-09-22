@@ -32,15 +32,15 @@ ReFS Stream Snapshot Analysis
     Resident:     1600 bytes
     Snapshots:    2
 
-    [1] "sameaslastversion"
-        Stream size:   201 bytes
-        Alloc size:    201 bytes
+    [1] "first"
+        Stream size:   186 bytes
+        Alloc size:    186 bytes
         Snap alloc:    4096 bytes
         Snapshot ID:   ?
         Raw val len:   116
-    [2] "first"
-        Stream size:   186 bytes
-        Alloc size:    186 bytes
+    [2] "sameaslastversion"
+        Stream size:   201 bytes
+        Alloc size:    201 bytes
         Snap alloc:    4096 bytes
         Snapshot ID:   ?
         Raw val len:   116
@@ -51,27 +51,27 @@ ReFS Stream Snapshot Analysis
     Resident:     2520 bytes
     Snapshots:    4
 
-    [1] "v3"
-        Stream size:   92 bytes
-        Alloc size:    92 bytes
+    [1] "firstversion"
+        Stream size:   42 bytes
+        Alloc size:    42 bytes
         Snap alloc:    4096 bytes
         Snapshot ID:   ?
         Raw val len:   116
-    [2] "v2"
-        Stream size:   65 bytes
-        Alloc size:    65 bytes
-        Snap alloc:    4096 bytes
-        Snapshot ID:   ?
-        Raw val len:   116
-    [3] "last"
+    [2] "last"
         Stream size:   5 bytes
         Alloc size:    5 bytes
         Snap alloc:    4096 bytes
         Snapshot ID:   ?
         Raw val len:   116
-    [4] "firstversion"
-        Stream size:   42 bytes
-        Alloc size:    42 bytes
+    [3] "v2"
+        Stream size:   65 bytes
+        Alloc size:    65 bytes
+        Snap alloc:    4096 bytes
+        Snapshot ID:   ?
+        Raw val len:   116
+    [4] "v3"
+        Stream size:   92 bytes
+        Alloc size:    92 bytes
         Snap alloc:    4096 bytes
         Snapshot ID:   ?
         Raw val len:   116
@@ -95,15 +95,15 @@ ReFS Stream Snapshot Analysis
     Resident:     1888 bytes
     Snapshots:    2
 
-    [1] "versionmodified"
-        Stream size:   3202036 bytes
-        Alloc size:    3202036 bytes
-        Snap alloc:    3203072 bytes
-        Snapshot ID:   ?
-        Raw val len:   116
-    [2] "copiedversion"
+    [1] "copiedversion"
         Stream size:   71395 bytes
         Alloc size:    71395 bytes
         Snap alloc:    73728 bytes
+        Snapshot ID:   ?
+        Raw val len:   116
+    [2] "versionmodified"
+        Stream size:   3202036 bytes
+        Alloc size:    3202036 bytes
+        Snap alloc:    3203072 bytes
         Snapshot ID:   ?
         Raw val len:   116

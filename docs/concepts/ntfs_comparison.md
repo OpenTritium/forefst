@@ -166,11 +166,15 @@ The classic NTFS timestomping check — comparing the `$STANDARD_INFORMATION` se
 single-named file**, because there is only one `$SI` set and no `$FN` twin to compare it against. A
 **hard-linked file differs**: ReFS carries one `$SI` set *per name*, so each name is an independent
 timestamp copy and the copies **can** hold different times — where NTFS's hard links share a single `$SI`
-and cannot diverge at all. That difference is real, but it buys less than it appears to. A lab
-measurement found that calling `SetFileTime` through one name leaves **both** name rows byte-identical
-across their whole value, so the ordinary tool updates every name at once. Divergence between a file's
-names is therefore evidence worth following; **agreement between them clears nothing**, because it is
-exactly what a name-scoped stomp leaves behind. See [Hard Links](hard_links.md). For single-named files, timestomping is nonetheless
+and cannot diverge at all. That difference is real, but it is narrower and more perishable than it
+looks. A `SetFileTime` through one name writes the file's **own record**, which every name shares, so the
+file's truth changes at once; what can disagree is each name's **index entry**, a copy the driver
+refreshes only for the name that was opened (`RefsUpdateFileDupInfo`). A sibling nobody has opened since
+the stomp still carries the pre-stomp times — and the next read of it, an antivirus scan or the
+examiner's own `dir` included, refreshes that entry and destroys the difference. Divergence between a
+file's names is therefore evidence worth following; **agreement between them clears nothing**, because
+agreement has two causes and one of them is that somebody read the file. See
+[Hard Links](hard_links.md). For single-named files, timestomping is nonetheless
 detectable by three other means. The metadata-change time
 (`$SI`+0x10) is filesystem-controlled and not reachable through the high-level APIs common tools use
 (`SetFileTime`, PowerShell), so a back-dated Created or Modified value leaves change-time far in the

@@ -46,6 +46,10 @@ pages, or from each tool's built-in `--help` (`forefst.py <image> <cmd> --help`)
 ## Constraints and provenance
 
 Both tools are **Python 3.7+ stdlib only** (no third-party dependencies) and operate read-only on a copy
-of the image. They were validated across the same corpus the reference rests on — see
-[how this was verified](../methodology.md). Worked, image-specific runs of these tools are in
+of the image. They are exercised across the same corpus the reference rests on — every release runs both tools over
+every image and compares the output byte-for-byte against a committed baseline, so an unintended change
+in any command is caught. That is a REGRESSION guarantee (the output did not change unnoticed), not a
+proof of correctness: it cannot detect an answer that has been wrong since the baseline was taken. Where
+a claim is independently checked against ground truth this codebase did not produce, the page says so —
+see [how this was verified](../methodology.md). Worked, image-specific runs of these tools are in
 [examples](../examples/README.md).

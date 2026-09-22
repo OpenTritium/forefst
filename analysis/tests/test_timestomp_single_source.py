@@ -19,7 +19,7 @@ import sys
 import pytest
 
 # analysis/tests/ -> three levels up to the repo root.
-REPO = os.path.dirname(os.path.dirname(os.path.dirname(os.path.abspath(__file__))))
+from _repo import REPO                                   # layout-independent; see _repo.py
 sys.path.insert(0, REPO)
 import forefst as F                                                     # noqa: E402
 

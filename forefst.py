@@ -246,7 +246,7 @@ def validate_image(path, die_fn=None):
 
 # ─── Constants ────────────────────────────────────────────────────────
 PROG = "forefst"
-VERSION = "1.12.3"
+VERSION = "1.13.0"
 # Phase 3 (4.D): directory walks default to FULL depth (no artificial cap); `--depth N` overrides. The real
 # recursion depth equals the actual directory nesting (ReFS trees are shallow — tens of levels), so this
 # constant is never the binding limit; it just means "don't truncate". main() also raises the interpreter
@@ -580,13 +580,80 @@ def parse_vbr(f, ps):
     bpc = le64(bs, 0x40) if le64(bs, 0x40) != 0 else 0x4000000
     return cs, vmaj, vmin, chk_algo, bpc
 
+# A6/K034: set when a redundancy finding (a MISSING/DAMAGED/INVALID bootstrap copy) was reported, so
+# `_escalate_rc` turns an otherwise-successful run into exit 2. Mirrors _SKIP_FINDING / _WALK_DAMAGE.
+_REDUNDANCY_FINDING = []
+
+# A5/K033: set when the primary SUPB was unusable and a backup copy was used instead. `summary` reports it
+# and the run exits 2 -- losing the primary superblock is a finding about the volume, not a detail.
+_SUPB_FELL_BACK = {}
+
+
+def _supb_backup_lcns(f, ps, cs):
+    """The two secondary SUPB slots, by ADDRESS (end_lcn-3 / end_lcn-2).
+
+    Same rule `_scan_backup_copies` uses: measured over the corpus the copies sit at those two slots on
+    102 of 102 ReFS volumes (every cluster size, every version, 2 GB to 2 TB). Located by address rather
+    than by scanning for the signature, because a copy whose signature is destroyed must read as DAMAGED,
+    not as absent.
+    """
+    try:
+        f.seek(ps); vbr = f.read(512)
+        if vbr[3:7] != b"ReFS":
+            return []
+        total_sectors = le64(vbr, 0x18) if len(vbr) >= 0x20 else 0
+        if total_sectors <= 1:
+            return []
+        end_lcn = (total_sectors * _vbr_bytes_per_sector(vbr)) // cs
+        return [l for l in (end_lcn - 3, end_lcn - 2) if l > SUPB_LCN]
+    except (OSError, OverflowError, ValueError) as _e:
+        # Returning [] here would say "this volume has no backup SUPB slots", which is a MEASUREMENT.
+        # What actually happened is that the VBR geometry could not be read, so we could not look --
+        # and a redundancy check that cannot look must not report absence. Recorded with its type and
+        # location so the exit status says the work was not done (B4).
+        _skip_note("SUPB backup location", "reading VBR geometry for the backup slots", _e)
+        return []
+
+
 def parse_supb(f, ps, cs):
     f.seek(ps + SUPB_LCN * cs); data = f.read(cs)
     if data[:4] != b"SUPB":
-        raise ValueError(
-            f"superblock (SUPB) not found at LCN 0x{SUPB_LCN:x} (offset 0x{ps + SUPB_LCN * cs:x}): expected "
-            f"'SUPB', got {data[:4]!r}. If this is a raw partition image, check --partition-start; to inspect "
-            f"the bootstrap chain run `refsanalysis.py <image> supb -v`.")
+        # ReFS keeps three superblock copies precisely so the loss of one is survivable, and the volume
+        # below is still fully readable from a backup. Failing here reported a READABLE volume as
+        # unreadable and pointed the reader at `--partition-start`, which is a different fault entirely
+        # (A5/K033). Try the backups before giving up; accept one only if it carries the signature AND
+        # passes its own self-checksum, so a second damaged copy cannot be mistaken for a good one.
+        _tried = []
+        for _lcn in _supb_backup_lcns(f, ps, cs):
+            try:
+                f.seek(ps + _lcn * cs); _alt = f.read(cs)
+            except (OSError, OverflowError):
+                continue
+            if _alt[:4] != b"SUPB":
+                _tried.append((_lcn, "no SUPB signature"))
+                continue
+            _ok, _ckname = _verify_self_checksum(_alt, cs)
+            if _ok is False:
+                _tried.append((_lcn, "self-checksum FAILED (%s)" % _ckname))
+                continue
+            _SUPB_FELL_BACK.update(primary_lcn=SUPB_LCN, used_lcn=_lcn, ckname=_ckname,
+                                   primary_all_zero=(not any(data)), tried=_tried)
+            print("[%s] WARNING: primary superblock (SUPB) at LCN 0x%x is unreadable (%s); "
+                  "recovered from the backup copy at LCN 0x%x. The volume is readable, but it has lost "
+                  "its primary superblock." % (PROG, SUPB_LCN,
+                                               "all zero" if not any(data) else "signature %r" % data[:4],
+                                               _lcn), file=sys.stderr)
+            data = _alt
+            break
+        else:
+            _detail = ("; ".join("LCN 0x%x: %s" % t for t in _tried)
+                       if _tried else "no backup slots could be located from the VBR")
+            raise ValueError(
+                f"superblock (SUPB) not found at LCN 0x{SUPB_LCN:x} (offset 0x{ps + SUPB_LCN * cs:x}): expected "
+                f"'SUPB', got {data[:4]!r}, and no usable backup superblock was found ({_detail}). "
+                f"If this is a raw partition image, check --partition-start; to inspect the bootstrap chain "
+                f"run `refsanalysis.py <image> supb -v`, and to repair from a sibling copy "
+                f"`refsanalysis.py <image> bootedit repair --dry-run`.")
     off = le32(data, 0x70); cnt = le32(data, 0x74)
     # E9: clamp the on-disk count (doc: always 2). A fuzzed/corrupt cnt (e.g. 0xFFFFFFFF) would build a
     # multi-billion-entry list and hang; also bound to the page so an out-of-range off can't over-read.
@@ -597,7 +664,7 @@ def parse_supb(f, ps, cs):
     return [le64(data, off + i * 8) for i in range(cnt)]
 
 def parse_chkp(f, ps, cs, lcn):
-    f.seek(ps + lcn * cs); raw = f.read(4 * cs)
+    f.seek(ps + lcn * cs); raw = f.read(_page_bytes(cs))   # N52
     if raw[:4] != b"CHKP":
         raise ValueError(
             f"checkpoint (CHKP) not found at LCN 0x{lcn:x} (offset 0x{ps + lcn * cs:x}): expected 'CHKP', got "
@@ -855,6 +922,8 @@ class Translator:
         return vlcn
 
 
+_INTEGRITY_FAILED = []   # A3: names whose stored CRC-32C did not match the bytes delivered this run
+
 _ALL_TRS = []   # audit 4.2: EVERY Translator built this run. Was a single _LAST_TR — but `--cow-before` builds a
                 # SECOND Translator (the earlier image), and it silently overwrote the first, dropping that image's
                 # unmapped-container caveat — the exact silent evidence-loss the 3.2 fix exists to prevent.
@@ -888,25 +957,109 @@ def _defer_summary():
 
 
 atexit.register(lambda: _skip_summary())
+atexit.register(lambda: _walk_damage_summary())      # B3: an unreadable page is never silent
 atexit.register(lambda: _defer_summary())
 
 # ─── B+ tree walker ──────────────────────────────────────────────────
-def walk_bplus(f, ps, cs, tr, vlcns, max_depth=5):
+def walk_bplus(f, ps, cs, tr, vlcns, max_depth=5, oid=None):
     plcns = [tr.tr(v) for v in vlcns] if tr else vlcns
     page = b""
     for p in plcns: f.seek(ps + p * cs); page += f.read(cs)
-    return _walk(page, f, ps, cs, tr, max_depth)
+    # B1/A9 (RC2): when the caller names the object, verify this ROOT page against the digest the Object
+    # Table recorded for it -- using the bytes just read, so the check costs a hash and no extra I/O.
+    # (Verifying by re-reading cost 4.6x on winsider; this is the same check without the second read.)
+    if oid is not None:
+        verify_object_root(oid, page)
+    return _walk(page, f, ps, cs, tr, max_depth, plcns=plcns)
 
-def _walk(page, f, ps, cs, tr, depth, visited=None):
+# B3 (K044/K045/K048): a walk that cannot READ a page must not be indistinguishable from a table that
+# is genuinely EMPTY. Every `return []` below used to be silent, so destroying one page's signature made
+# `security --audit` print "Descriptors: 0 ... VERDICT: CLEAN" and `summary` print "0 rows" -- a destroyed
+# table reported as a clean empty one. Damage is recorded here and surfaced by the commands that report
+# a count as authoritative. Nothing is recorded on an undamaged volume, so output there is unchanged.
+_WALK_DAMAGE = []
+
+
+def _walk_note_damage(kind, detail):
+    if len(_WALK_DAMAGE) < 500:
+        _WALK_DAMAGE.append((kind, detail))
+
+
+def _walk_damage_reset():
+    del _WALK_DAMAGE[:]
+
+
+_WALK_DAMAGE_REPORTED = []
+
+
+def _walk_damage_summary():
+    """B3: say, once, that part of a tree could not be read -- silent when everything was read.
+
+    Registered with atexit for the same reason `_skip_summary` is: EVERY command that walks a tree
+    reports a count, and a count taken over a tree with an unreadable page is not a census. Without
+    this, zeroing one directory page dropped its names from `files` with no message and exit 0
+    (K045), and destroying a table root printed "0 rows"/"Descriptors: 0" (K044/K048). Written to
+    stderr so it can never corrupt CSV or JSON on stdout.
+    """
+    if not _WALK_DAMAGE or _WALK_DAMAGE_REPORTED:
+        return
+    _WALK_DAMAGE_REPORTED.append(True)
+    print(f"[{PROG}] WARNING: {len(_WALK_DAMAGE)} metadata page(s) could not be read. Any count, "
+          f"listing or verdict above is INCOMPLETE — rows stored only on those pages are missing and "
+          f"their absence is NOT evidence they do not exist:", file=sys.stderr)
+    for line in _walk_damage_lines():
+        print(f"[{PROG}]          {line}", file=sys.stderr)
+
+
+def _walk_damage_lines():
+    """One line per distinct damage kind, with a count. Empty list when the walk read everything."""
+    if not _WALK_DAMAGE:
+        return []
+    agg = {}
+    for kind, detail in _WALK_DAMAGE:
+        agg.setdefault(kind, []).append(detail)
+    out = []
+    for kind in sorted(agg):
+        ds = agg[kind]
+        out.append("%s: %d page(s) — e.g. %s" % (kind, len(ds), "; ".join(ds[:2])))
+    return out
+
+
+def _walk(page, f, ps, cs, tr, depth, visited=None, plcns=None):
     # E10: cycle/re-read protection. A corrupt inner node whose child pointers repeat an ancestor page
     # would otherwise fan out ~4^depth and re-read identical pages. `visited` is a per-walk set keyed on
     # (addressing-mode, head-PLCN) — the mode bit is essential so a translated VLCN and a physical LCN
     # sharing a numeric value are NOT merged (which would drop a real page). On a well-formed tree every
     # child page is referenced exactly once, so this NEVER skips a legitimate page (output unchanged).
     if visited is None: visited = set()
-    if depth <= 0 or len(page) < 4 or page[:4] != b"MSB+": return []
+    if depth <= 0:
+        # a tree deeper than max_depth silently loses every row below this point
+        _walk_note_damage("depth-limit-reached", "a subtree below the %d-level limit was not walked" % depth)
+        return []
+    if len(page) < 4:
+        _walk_note_damage("unreadable", "short read (%d bytes) where a page was expected" % len(page))
+        return []
+    if page[:4] != b"MSB+":
+        # N44: an all-zero page is either an ACQUISITION GAP (the sparse image never captured it) or a
+        # page that was zeroed. Measured on the millionsofactions family, every all-zero referenced page
+        # is an image hole -- so reporting it as "unreadable" would name the volume for a defect of the
+        # acquisition. Same distinction K187/A9 make; the check runs only on a page that already failed.
+        _where = (" at plcn 0x%x" % plcns[0]) if plcns else ""
+        if not any(page):
+            if plcns and _page_in_image_hole(f, ps, cs, list(plcns), None):
+                _walk_note_damage("absent-from-image",
+                                  "page%s is not present in this image (acquisition gap, not damage)" % _where)
+            else:
+                # K188: the message names the PAGE and the cause; it used to blame a generic failure and
+                # never say which page could not be read.
+                _walk_note_damage("zeroed-page", "page%s reads as all zeros on this volume" % _where)
+        else:
+            _walk_note_damage("not-a-node", "signature %r%s" % (page[:4], _where))
+        return []
     thoff = 0x50 + le32(page, 0x50)
-    if thoff + 40 > len(page): return []
+    if thoff + 40 > len(page):
+        _walk_note_damage("malformed", "table header at 0x%x runs past the end of the page" % thoff)
+        return []
     tbl = struct.unpack_from("<10I", page, thoff)
     is_inner = bool(tbl[3] & 0x100)
     astart, aend = tbl[4], tbl[8]
@@ -936,21 +1089,87 @@ def _walk(page, f, ps, cs, tr, depth, visited=None):
                     visited.add(head)
                 cp = b""
                 for p in cps: f.seek(ps + p * cs); cp += f.read(cs)
-                rows.extend(_walk(cp, f, ps, cs, tr, depth-1, visited))
+                # A9: opt-in. `_VERIFY_PAGES` is False by default, so this is one attribute read per
+                # inner row on the fast path -- no CRC, no extra I/O, output unchanged.
+                if _VERIFY_PAGES:
+                    _verify_child_page(vd, cp, "plcn 0x%x" % cps[0])
+                rows.extend(_walk(cp, f, ps, cs, tr, depth-1, visited, plcns=cps))
         else:
             rows.append((kd, vd))
     return rows
 
 # ─── Object Table ────────────────────────────────────────────────────
+# B1/A9 (RC2): oid -> (digest_length, digest) for each object's ROOT page, filled by build_object_map.
+# `_OBJ_ROOT_VERIFIED` remembers what has already been checked so a repeated walk costs one set lookup.
+_OBJ_ROOT_REF = {}
+_OBJ_ROOT_VERIFIED = set()
+
+
+def verify_object_root(oid, data):
+    """Verify one object's root page against the digest the Object Table recorded for it.
+
+    `data` is the page as the caller has ALREADY read it, so this adds a hash and no I/O. Returns True
+    when it verifies or cannot be checked, False when the page has been ALTERED. An all-zero page is an
+    acquisition gap, not an alteration, and is reported as such -- the two need different actions.
+    """
+    ref = _OBJ_ROOT_REF.get(oid)
+    if ref is None or oid in _OBJ_ROOT_VERIFIED or not data:
+        return True
+    _OBJ_ROOT_VERIFIED.add(oid)
+    clen, digest = ref
+    # The digest covers the WHOLE page -- every LCN slot concatenated. A caller that read fewer slots
+    # than the Object Table names has not read the page the digest describes, so the comparison would be
+    # meaningless: say nothing rather than report a mismatch the data cannot support.
+    _want = len(_OBJ_ROOT_LCNS.get(oid) or [])
+    if _want and len(data) % _want:
+        return True
+    good = (refs_crc64(data) == int.from_bytes(digest, "little")) if clen == 8 \
+        else (hashlib.sha256(data).digest() == digest)
+    if good:
+        return True
+    if not any(data):
+        _finding("root page absent",
+                 "the root page of object 0x%x reads as all zeros (acquisition gap)" % oid)
+        return True
+    n = _finding("page-reference mismatch",
+                 "the root page of object 0x%x does not match the digest the Object Table recorded "
+                 "for it - it has been ALTERED since that digest was written" % oid)
+    if n <= 3:
+        print("[%s] WARNING: metadata page for object 0x%x does not match its recorded checksum — "
+              "the page has been altered since the checksum was written." % (PROG, oid), file=sys.stderr)
+    return False
+
+
+_OBJ_ROOT_LCNS = {}
+
+
 def build_object_map(f, ps, cs, tr, ot_vlcns):
     rows = walk_bplus(f, ps, cs, tr, ot_vlcns)
     objects = {}
+    del _OT_MAX_LSN[:]
+    _hi = 0
     for kd, vd in rows:
         if len(kd) < 16 or len(vd) < 64: continue
         oid = le64(kd, 8)
+        # B7/K052: value+0x18 is the object's last-write LSN (E104). The highest of them is the log
+        # position the volume actually reached; the checkpoint records the position it was flushed to.
+        # Captured here because this walk already happens in every bootstrap -- it costs one comparison.
+        _l = le64(vd, 0x18)
+        if _l > _hi: _hi = _l
         lcns = [le64(vd, 0x20 + j*8) for j in range(4)]
         valid = [s for s in lcns if s not in (0, 0xFFFFFFFFFFFFFFFF)]
         objects[oid] = valid
+        # B1/A9 (RC2): capture the page reference that binds this object's ROOT page, so the listing and
+        # content paths can verify the page they are about to read. `--verify-pages` never covered this:
+        # it checks CHILD pages inside _walk, while an object's root comes from the Object Table. A byte
+        # flipped in a directory's root page was therefore listed and extracted silently, and only
+        # `integrity --checksums` noticed. Captured here because this walk already happens in every
+        # bootstrap -- the row is in hand, so it costs no extra I/O.
+        _clen = le32(vd, 0x44) if len(vd) >= 0x48 else 0
+        if valid and _clen in (8, 32) and 0x48 + _clen <= len(vd):
+            _OBJ_ROOT_REF[oid] = (_clen, bytes(vd[0x48:0x48 + _clen]))
+            _OBJ_ROOT_LCNS[oid] = list(valid)
+    _OT_MAX_LSN.append(_hi)
     return objects
 
 # ─── Security Descriptor Table ────────────────────────────────────────
@@ -1325,10 +1544,18 @@ def get_object_si(f, ps, cs, tr, vlcns, status=None):
 
 # ─── ADS detection in per-object B+ tree ──────────────────────────────
 def detect_ads(f, ps, cs, tr, vlcns):
-    """Check if an object has Alternate Data Streams (type 0x80, marker 0x80000002)."""
+    """Check if an object has Alternate Data Streams (type 0x80, marker 0x80000002).
+
+    NOTE (B4, 2026-09-19): this function is currently UNREACHABLE -- nothing calls it. The live ADS
+    path is `detect_ads_in_resident`. It is kept consistent with the rest of the code rather than left
+    as a trap: a bare `except: return False, []` here would report "this object has no alternate data
+    streams" for an object whose tree could not be read, which is a negative forensic finding produced
+    by a failure. Delete it or wire it up; do not leave it silent.
+    """
     try:
         rows = walk_bplus(f, ps, cs, tr, vlcns)
-    except Exception:
+    except Exception as _e:
+        _skip_note("detect_ads", "an object's tree (ADS absence is NOT established)", _e)
         return False, []
     ads_names = []
     for kd, vd in rows:
@@ -1384,7 +1611,7 @@ def _descend_embedded_index(vd, base, ctx, _depth=0):
     return rows
 
 
-def parse_resident_btree_rows(vd, ctx=None):
+def parse_resident_btree_rows(vd, ctx=None, salvage=False):
     """Parse embedded B+-tree row offset table in a resident directory entry value.
 
     Returns list of (key_bytes, value_bytes) tuples for all rows found.
@@ -1399,16 +1626,48 @@ def parse_resident_btree_rows(vd, ctx=None):
         return []
     base = le32(vd, 0)
     if base < 0x28 or base >= len(vd) - 0x28:
+        # NOT instrumented, deliberately (B4). A base of 0 simply means "this value carries no embedded
+        # tree", which is the normal case for deleted and carved records -- an attempt to flag it as an
+        # anomaly fired on healthy volumes because the census behind it only covered the live-directory
+        # walk and never reached the deleted/carve path.
         return []
     if ctx is not None and base + 0x24 <= len(vd) and (vd[base + 0x0D] & 0x01):
         return _descend_embedded_index(vd, base, ctx)
+    # K005 (RC2): TWO entry points, because the two callers want different things.
+    #
+    # LIVE enumeration (salvage=False, the default) is bounded by the node header's row count. The old
+    # code walked BACKWARD from the end of the value while the u16 at pos+2 read 0xFFFF, and that word
+    # is not a two-valued sentinel -- it is a B+-tree upper bound taking 38 distinct values over 689,639
+    # entries (K101/K168). The scan therefore ran past the array start into free space, where slots from
+    # an earlier state of the node still carry 0xFFFF and still address real rows, and the tool reported
+    # ALTERNATE DATA STREAMS THAT DO NOT EXIST: 28 files, 44 fabricated names.
+    #
+    # SALVAGE (salvage=True) keeps the unbounded scan, and must. A deletion DECREMENTS the header's row
+    # count while the slots below still address the old rows -- which is precisely how the carve path
+    # recovers deleted content. Bounding it cost 99 carved files and 90 distinct content hashes on
+    # win11refstestmftecmd when both paths shared one reader; that is why this is a parameter and not a
+    # replacement.
     offsets = []
-    pos = len(vd) - 4
-    while pos >= base:
-        if le16(vd, pos + 2) != 0xFFFF:
-            break
-        offsets.append(le16(vd, pos))
-        pos -= 4
+    _arr_lo = _cnt = _arr_hi = None
+    if base + 0x24 <= len(vd):
+        _arr_lo, _cnt, _arr_hi = le32(vd, base + 0x10), le32(vd, base + 0x14), le32(vd, base + 0x20)
+    _hdr_ok = (not salvage
+               and _arr_lo is not None
+               and 0 < _arr_lo < _arr_hi
+               and base + _arr_hi <= len(vd)
+               and (_arr_hi - _arr_lo) % 4 == 0
+               and (_arr_hi - _arr_lo) // 4 == _cnt
+               and 0 < _cnt <= 8192)
+    if _hdr_ok:
+        for _i in range(_cnt):
+            offsets.append(le16(vd, base + _arr_lo + _i * 4))
+    else:
+        pos = len(vd) - 4
+        while pos >= base:
+            if le16(vd, pos + 2) != 0xFFFF:
+                break
+            offsets.append(le16(vd, pos))
+            pos -= 4
     rows = []
     for off in offsets:
         abs_off = base + off
@@ -1544,9 +1803,14 @@ def _stream_data_form(rec, ctx=None):
       snapshot-shared  extent form owning NO allocation (disk_alloc@+0x48 == 0) while a
                        snapshot sub-record for the same stream exists -- the live bytes are
                        the snapshot's (E83).
-      sparse           extent form owning no allocation and NO snapshot row: nothing was ever
+      unallocated      extent form owning no allocation and NO snapshot row: nothing was ever
                        written. Measured on `bigsparse.dat` / `sparse.dat`; without this the
-                       two are indistinguishable from the snapshot case.
+                       two are indistinguishable from the snapshot case. (Named `sparse` before
+                       1.11.0; the constant is DATA_SPARSE for source compatibility.)
+                       K004: reached only when the declared size is NON-ZERO. A 0-byte stream is
+                       classified by DESCRIPTOR FORM like any other -- an extent-form one is
+                       `extents` -- because "nothing was ever written" is not a distinguishable
+                       state for a stream that has nothing to write. Documented as an exception.
       unknown          no $DATA row, or a shape that matches none of the above.
     """
     try:
@@ -1588,6 +1852,45 @@ def _stream_data_form(rec, ctx=None):
 # reported "no attributes". Anything that gives up on part of the volume says so, once per kind,
 # with a count -- and anything that would otherwise emit BYTES raises instead (never invent data).
 _SKIP_NOTES = {}
+_VERSION_CONTRADICTED = []  # K051: the boot sector's version is implausible or contradicted by the
+                            # checkpoint / $VOLUME_INFORMATION. The VBR is the easiest structure to edit.
+_OT_MAX_LSN = []          # B7/K052: highest per-object last-write LSN seen in the Object Table
+_CHKP_STALE = []          # A1/K035: the active checkpoint was unusable and an OLDER one was used, or a
+                          # copy's two clocks disagree. Drives the exit status and is reported by `summary`.
+# ---------------------------------------------------------------------------------------------------
+# S1 (RC2): ONE place a finding is recorded, and the only place a verdict or an exit code may read.
+#
+# The defect this exists to end: `_pr["failed"]` -- the Object-Table page-reference mismatch counter --
+# occurred exactly ONCE in this file, on the line that printed it. A flipped byte in a directory's root
+# page therefore printed "Mismatched: 1" and, three lines later, "VERDICT: all N checksummed pages
+# VERIFIED - no tampering/corruption", PASS, rc 0. The same shape gave a zeroed primary superblock rc 2
+# from `summary` and rc 0 from `files`, because that finding was wired into one command.
+#
+# Plan v12 section 4 names this class first -- "a check that computes a failure and a verdict that
+# ignores it" -- and it survived because every previous fix added ANOTHER counter (_SKIP_FINDING,
+# _WALK_DAMAGE, _CHKP_STALE, backup_warn) instead of a sink. Counters are per-site; a sink is not.
+#
+# `_finding()` is the only way to record one, `_findings()` the only way to read them, and the gate
+# `check_finding_reachability.py` asserts no counter is print-only.
+_FINDINGS = []            # [(kind, text)] -- every finding, whatever produced it
+
+
+def _finding(kind, text):
+    """Record a finding. Returns the running count for this kind, so a caller can still print a number."""
+    _FINDINGS.append((kind, text))
+    return sum(1 for k, _ in _FINDINGS if k == kind)
+
+
+def _findings(kind=None):
+    return [t for k, t in _FINDINGS if kind is None or k == kind]
+
+
+_SKIP_FINDING = []        # B4: stages whose skip makes the output incomplete (drives the exit status)
+_CAPTURE_INTEGRITY_VD = []    # B2/K071: truthy while `integrity` asks the walk for integrity-file records
+_INTEGRITY_VD_CAPTURE = []    # (path, value_record) pairs collected under that flag
+_JOURNAL_TAIL_DESTROYED = []  # B3/K069: journal records destroyed after the last surviving one,
+                              # proven by a per-file LastUsn pointer that outlives them.
+_JOURNAL_WIPE_SUSPECT = []   # B5/K068: $J allocated but holding no record and no non-zero byte
 
 
 
@@ -1656,8 +1959,16 @@ def _row_name(kd, where, off=4):
         return None
 
 
-def _skip_note(stage, where, exc, limit=3):
-    """Record and report a skipped unit of work. Returns the running count for this kind."""
+def _skip_note(stage, where, exc, limit=3, expected=False):
+    """Record and report a skipped unit of work. Returns the running count for this kind.
+
+    B4: a skip is a FINDING by default -- work the tool could not do is missing from the output, and the
+    exit status must say so. `expected=True` marks a normal DATA condition that is not a failure to read
+    (the only one measured across 12 clean volumes x 16 commands is unwritten USN ring space), so a
+    healthy volume is never reported as having a finding.
+    """
+    if not expected:
+        _SKIP_FINDING.append(stage)
     key = (stage, type(exc).__name__)
     n = _SKIP_NOTES.get(key, 0) + 1
     _SKIP_NOTES[key] = n
@@ -1759,7 +2070,7 @@ def _backing_inline_data(vd, ctx=None):
     return None
 
 
-def get_resident_data_content(vd, ctx=None):
+def get_resident_data_content(vd, ctx=None, salvage=False):
     """Q7: inline bytes of the main $DATA stream of a resident file, or None.
 
     The $DATA row (key marker 0x80000001 + attr type 0x80) carries the SAME stream descriptor as an ADS
@@ -1767,7 +2078,7 @@ def get_resident_data_content(vd, ctx=None):
     at hdr+0x0C, stream size at hdr+0x1C, and inline content at hdr+0x38. Only storage_type==0 is inline
     (verified on desktop.ini: content '[.ShellClassInfo]...' at hdr+0x38). Returns None for a non-inline
     ($DATA descriptor pointing to extents) or malformed row — the caller falls back to the extent path."""
-    for kd, vrow in parse_resident_btree_rows(vd, ctx):
+    for kd, vrow in parse_resident_btree_rows(vd, ctx, salvage=salvage):
         if not (len(kd) >= 14 and kd[8:12] == _SI_MARKER and kd[12] == 0x80 and kd[13] == 0x00):
             continue
         hdr = None
@@ -1787,7 +2098,7 @@ def get_resident_data_content(vd, ctx=None):
     return None
 
 
-def _current_stream_extent_backed(vd, ctx=None):
+def _current_stream_extent_backed(vd, ctx=None, salvage=False):
     """F5: True when a file's CURRENT $DATA stream lives in on-disk extents (so the file is NON-RESIDENT even
     though its type-0x30 value is 'long' > 84 B). The live stream is the sub_id-0x1000 holder whose descriptor
     is 0x00010028 (le32 @ holder value+0x04); its on-disk allocation is disk_alloc @ holder value+0x48. Older
@@ -1795,7 +2106,7 @@ def _current_stream_extent_backed(vd, ctx=None):
     (its $DATA is a single-instance 0x80000001 descriptor) or disk_alloc==0. (structure_reference §C.6;
     calibrated on win11refs8g.raw: bigsparse/rangefile/stomp_nonres disk_alloc>0 => non-resident,
     test.txt current-stream disk_alloc==0 => resident.)"""
-    for kd, vrow in parse_resident_btree_rows(vd, ctx):
+    for kd, vrow in parse_resident_btree_rows(vd, ctx, salvage=salvage):
         if (len(kd) >= 0x18 and kd[12] == 0x80 and kd[13] == 0x00
                 and le64(kd, 0x10) == 0x1000 and len(vrow) >= 8 and le32(vrow, 4) == 0x00010028):
             return len(vrow) >= 0x50 and le64(vrow, 0x48) > 0
@@ -1893,7 +2204,7 @@ def fetch_t40_backing(f, ps, cs, tr, obj_map, dir_oid, file_id, file_size=None, 
         return _outcome(status, None)
     cands = []
     try:
-        for kd, vd in walk_bplus(f, ps, cs, tr, obj_map[dir_oid]):
+        for kd, vd in walk_bplus(f, ps, cs, tr, obj_map[dir_oid], oid=dir_oid):
             if len(kd) >= 0x10 and le16(kd, 0) == 0x40 and le64(kd, 0x08) == file_id:
                 cands.append(bytes(vd))
     except Exception as _e:
@@ -2010,7 +2321,7 @@ def resolve_path(f, ps, cs, tr, obj_map, path):
             return (None, None, None)
         found = None
         try:
-            rows = walk_bplus(f, ps, cs, tr, obj_map[oid])
+            rows = walk_bplus(f, ps, cs, tr, obj_map[oid], oid=oid)
         except Exception as _e:
             # "Unreadable" is not "absent". Returning the not-found tuple silently turns a
             # damaged directory into a confident wrong answer for every caller.
@@ -2072,7 +2383,136 @@ SNAP_DATA_DESC = 0x10028
 # run==1 extent carrying flag 0x1C00D0, immediately followed by an 8-byte element = [CRC32-C(cluster):le32@+0]
 # [reserved:le32@+4] (32-byte stride). CRC32-C = Castagnoli, reflected poly 0x82F63B78; unit = one 4096-byte
 # cluster. SHA-256 / 64K-cluster / v3.4 volumes carry NO inline element (checksums are out-of-line or absent).
-INTEGRITY_EXTENT_FLAG = 0x1C00D0
+INTEGRITY_EXTENT_FLAG = 0x1C00D0        # KEPT for the changelog's migration note; see _extent_row_crcs below
+
+# ─── A3: how an extent row declares its per-cluster CRC-32C ──────────────────────────────────────
+# `INTEGRITY_EXTENT_FLAG = 0x1C00D0` was never a flag value. The u32 at row+0x08 is
+# `flags(u16) | row_size(u16) << 16` (E86), so 0x1C00D0 means "flags 0x00D0 AND row_size 28" -- and
+# row_size 28 is 24 + 4*1, i.e. `run == 1`. The shipped test `flag == 0x1C00D0 and run == 1` therefore
+# says `run == 1` twice, and every integrity extent of two or more clusters went unverified in silence.
+# Measured on lab314_main: `small500.bin` (run 1, row_size 28) is checked; `big10k.bin` (run 3,
+# row_size 36, three stored CRC-32C values that all verify when recomputed by hand) is not, and
+# `extract` prints nothing about it. The wrong stride compounds it: a 36-byte row advanced 24 bytes,
+# so the parse landed inside the CRC array and every later row in that record was lost too.
+#
+# TWO independent discriminators exist, and this project has been burned by silently choosing the
+# weaker one (E65). So: the row's own declared SIZE is the rule -- either the checksum bytes are
+# present or they are not -- and flags bit 0x80 is carried as a CROSS-CHECK, not as a second opinion.
+# When they disagree the row is reported, never quietly resolved.
+EXT_FLAG_HAS_CRC = 0x80                 # flags@+0x08 low half: 0x00D0 = 0x0050 | 0x80 on integrity rows
+
+
+def _extent_row_size(v, off, run):
+    """The row's OWN declared length, from `row_size` at +0x0A: 24 for a plain run, 24 + 4*run when the
+    row carries one CRC-32C per cluster. Returns 0 when the field declares neither (a misparse), so a
+    caller can stop instead of striding blindly through the rest of the record."""
+    if off + 0x0C > len(v) or run <= 0:
+        return 0
+    rs = le16(v, off + 0x0A)
+    return rs if rs in (24, 24 + 4 * run) else 0
+
+
+def _extent_row_crcs(v, off, run):
+    """The per-cluster CRC-32C values this row carries, in cluster order, or [] when it carries none.
+    Returns (crcs, disagreement) where `disagreement` names a row whose declared size and whose
+    flags bit 0x80 tell different stories -- reported by the caller, never silently resolved."""
+    if off + 0x0C > len(v) or run <= 0:
+        return ([], None)
+    rs = le16(v, off + 0x0A)
+    flagged = bool(le16(v, off + 8) & EXT_FLAG_HAS_CRC)
+    sized = rs == 24 + 4 * run
+    dis = None
+    if flagged != sized:
+        dis = "row at +0x%x: flags bit 0x80=%s but row_size=%d (24+4*%d would be %d)" % (
+            off, flagged, rs, run, 24 + 4 * run)
+    if not sized or off + rs > len(v):
+        return ([], dis)
+    return ([le32(v, off + 24 + 4 * i) for i in range(run)], dis)
+
+# ─── THE hole predicate (A1; E65 re-scoped) ──────────────────────────────────────────────────────
+# One place decides that an extent row describes a SPARSE HOLE rather than clusters to read. Every
+# decoder routes through it, because the project has already shipped the other outcome: when the rule
+# was `vlcn == 0`, hole rows whose VLCN is non-zero were read as real data and `extract` delivered the
+# volume's own SUPB / MSB+ pages inside user files (K001 — reproduced on win11refs2tsnapshots: a 99 MB
+# file came back with 6,973,680 bytes of bootstrap metadata in it).
+#
+# THE RULE IS THE FLAG. A hole row sets bit 0x20 in flags@+0x08 and its VLCN *mirrors its FVCN*
+# (e.g. `fvcn=1 vlcn=0x1 run=25343 flags=0x180060`), so it is not zero and `vlcn == 0` never fires.
+# Measured over all six decoders on four volumes (P0.6, 8,864 accepted rows): the flag is a strict
+# SUPERSET of `vlcn == 0`, with 0 counterexamples. Two volumes carry holes with BOTH discriminators and
+# two carry holes with ONLY the flag — which is exactly how a corpus weighted to the first kind made
+# `vlcn == 0` look like a rule.
+#
+# `vlcn == 0` is NOT folded into the same test, and the first cut of this fix got that wrong. Two
+# different questions were being asked with one predicate:
+#
+#   1. IS THIS ROW A HOLE? — does it belong in the map, with its range zero-filled? That is the FLAG,
+#      and only the flag. An UNFLAGGED `vlcn == 0` row is not a hole; it is a malformed row, and the
+#      honest answer is to reject it so the cover guard fails cleanly. Admitting it as a hole would let
+#      a bogus map pass the cover check and serve clusters of zeros as a file's content.
+#      (`test_zero_run_and_zero_vlcn_rejected` pins exactly this, and is what caught the mistake.)
+#   2. MAY ITS CLUSTERS BE READ? — there `vlcn == 0` IS a floor, because VLCN 0 translates to PLCN 0,
+#      the boot region, which is never file content. That is `_extent_never_read`.
+#
+# The census measured the two discriminators as coincident on every row it saw (0 counterexamples in
+# either direction), so separating them costs nothing there — and it is what keeps a malformed row
+# malformed instead of promoting it to a legitimate hole.
+#
+# flags@+0x08 is read as a u32 whose HIGH half is `row_size` at +0x0A (E86), so the value looks like
+# 0x180060 rather than 0x60. Bit 0x20 lives in the low half, so the mask is unaffected.
+EXT_FLAG_SPARSE_HOLE = 0x20
+
+# N63 / LAB-E: a SECOND condition decides whether a run's bytes are the file's. `0x10` means the run has
+# been WRITTEN. ReFS allocates clusters on SetLength (and on pre-allocation) without zeroing them, so an
+# allocated-but-never-written run still holds whatever the volume put there before -- and Windows returns
+# zeros for it regardless. Reading those clusters serves FOREIGN BYTES into a user file.
+#
+# Measured three ways before this was applied:
+#   * LAB-E, whose expected SHA-256s were produced on Windows: 6/7 byte-exact WITHOUT this rule
+#     (`e1_setlength_4096k.bin` came back carrying 130,915 bytes of BitLocker `FVE-EOWBM` metadata),
+#     and 7/7 WITH it.
+#   * A real installation (winsider): of the known-unwritten runs, 693 hold NON-ZERO foreign bytes --
+#     in `edbres00001.jrs`/`edbres00002.jrs` (ESE reserve logs, allocated full-size and never written),
+#     `edb.log`, `ActivationStore.dat`. One leaks readable text belonging to another file.
+#   * The inverse is guarded by LAB-E's `e5` control, whose zeros were genuinely WRITTEN (flags carry
+#     0x10) and must therefore be READ from disk, not synthesised. A tool that simply emits zeros for
+#     zero-looking runs passes e1 and fails e5.
+#
+# `flags == 0` is NOT treated as unwritten. The heuristic marker-scan decoder does not recover flags and
+# returns 0 (with `vlcn` sometimes the $DATA descriptor constant 0x000E0080 read as an address), so
+# zeroing on "no flags" would destroy real data in exactly the files whose map is least trustworthy.
+# Only a POSITIVELY KNOWN flags word with 0x10 clear means unwritten.
+EXT_FLAG_WRITTEN = 0x10
+
+
+def _extent_never_written(flags):
+    """True iff the flags positively say this run was allocated but never written (N63).
+
+    Conservative on purpose: unknown flags (0) mean "read it", because the alternative is silently
+    replacing a file's real content with zeros.
+    """
+    return bool(flags) and not (flags & EXT_FLAG_WRITTEN)
+
+
+def _extent_is_hole(flags, vlcn=None):
+    """True iff this extent row IS a sparse hole — it belongs in the map and its range is zero-filled.
+    The flag decides; `vlcn` is accepted and ignored so call sites read naturally. See above."""
+    return bool(flags & EXT_FLAG_SPARSE_HOLE)
+
+
+def _extent_never_read(flags, vlcn):
+    """The read-time floor: no cluster is read for a hole, for a run never written (N63), nor for
+    VLCN 0 (PLCN 0 = the boot region, which is never a file's content). Deliberately separate from
+    `_extent_is_hole` — see above."""
+    return _extent_is_hole(flags) or _extent_never_written(flags) or not vlcn
+
+
+def _ext_skip_read(e):
+    """The same read-time floor, for a decoded extent dict."""
+    return (bool(e.get("is_hole")) or _extent_never_written(e.get("flags", 0))
+            or not e.get("vlcn", e.get("plcn", 0)))
+
+
 _INTEGRITY_UNSET = 0xABBAFFFE          # driver's unset / match-all placeholder — an unwritten checksum, not a mismatch
 _CRC32C_TABLE = None
 
@@ -2107,9 +2547,9 @@ def _decode_inline_extents(v, ncl, max_fvcn=None, tr=None):
     CRC32-C element is interleaved (integrity streams) — pick whichever validates. Returns
     [(file_vcn, vlcn, run_length)] sorted by file_vcn; stops at the first record that cannot be validated
     (the caller applies any coverage gate). `ncl` (volume cluster count) bounds plausibility; `max_fvcn`
-    optionally tightens the file_vcn bound (recover path passes size_cl). A record with `vlcn == 0` is a SPARSE
-    HOLE (VLCN 0 -> PLCN 0 = the boot region on every volume, so cluster 0 is never real file data; the flags
-    carry bit 0x20) — it is KEPT in the list and reassembly zero-fills it; it is never disk-read. Byte-identical
+    optionally tightens the file_vcn bound (recover path passes size_cl). A SPARSE HOLE is a record carrying
+    flags bit 0x20 (E98); its VLCN mirrors its file VCN and is usually non-zero, and this decoder normalises
+    it to 0 so the tuple consumers downstream can test it as one — it is KEPT in the list and reassembly zero-fills it; it is never disk-read. Byte-identical
     to the legacy fixed-24-stride decode when NO checksums are interleaved (proven on all corpus holders) but
     correct when they are. (structure_reference §C.6; Phase-0 SPEC 2026-08-02, disk-verified.)"""
     if len(v) < 0x50:
@@ -2142,6 +2582,15 @@ def _decode_inline_extents(v, ncl, max_fvcn=None, tr=None):
         if off < 0 or off + 24 > len(v):
             return None
         vlcn = le64(v, off); run = le32(v, off + 0x14); fvcn = le32(v, off + 0x0C)
+        flags = le32(v, off + 8)
+        # A1: ask the chokepoint FIRST. A hole row's VLCN mirrors its FVCN, so it is a non-zero address
+        # that the container table cannot map -- `_plausible_vlcn` rejected it, which both truncated the
+        # extent list at the first hole and (when it did survive) sent the reader to real clusters. A hole
+        # is normalised to VLCN 0 here so every downstream `vlcn == 0` test means exactly "hole".
+        if _extent_is_hole(flags, vlcn):
+            if 0 < run <= ncl and fvcn < fvcn_bound:
+                return (fvcn, 0, run)
+            return None
         if 0 < run <= ncl and fvcn < fvcn_bound and _plausible_vlcn(vlcn):
             return (fvcn, vlcn, run)
         return None
@@ -2154,12 +2603,20 @@ def _decode_inline_extents(v, ncl, max_fvcn=None, tr=None):
         exts.append(rec)
         if i == ecount - 1:
             break
-        if _ext(pos + 24) is not None:
+        # A3: the row declares its own length at +0x0A (24, or 24 + 4*run when it carries one CRC-32C per
+        # cluster). Ask it first. The 24-vs-32 probe below assumed a checksum array is always 8 bytes --
+        # true only for run == 1 -- so a run-3 integrity row (row_size 36) was stridden by 24 and the parse
+        # continued inside the checksum array. The probe stays as the fallback for a row whose size field
+        # is not one of the two legal values.
+        _step = _extent_row_size(v, pos, le32(v, pos + 0x14))
+        if _step and _ext(pos + _step) is not None:
+            pos += _step
+        elif _ext(pos + 24) is not None:
             pos += 24
         elif _ext(pos + 32) is not None:
             pos += 32                       # skip the interleaved 8-byte integrity CRC32-C element
         else:
-            pos += 24
+            pos += _step or 24
     exts.sort(key=lambda e: e[0])
     return exts
 
@@ -2186,7 +2643,10 @@ def parse_snapshot_data_entry(v, ncl=None, tr=None):
             base = eo + i * 24
             if base + 24 > len(v):
                 break
-            exts.append((le32(v, base + 0x0C), le64(v, base), le32(v, base + 0x14)))
+            _vl = le64(v, base)
+            if _extent_is_hole(le32(v, base + 8), _vl):
+                _vl = 0                               # A1: hole -> VLCN 0 (reassembly zero-fills, never reads)
+            exts.append((le32(v, base + 0x0C), _vl, le32(v, base + 0x14)))
         exts.sort(key=lambda e: e[0])
     return (stream_size, disk_alloc, exts)
 
@@ -2238,7 +2698,7 @@ def recover_cow_current_content(f, ps_off, cs, tr, vd, _content_what=None):
             _runs.append((plcn, 1, off))
             f.seek(ps_off + plcn * cs)
             chunk = f.read(cs)
-            buf[off:off + cs] = chunk
+            buf[off:off + len(chunk)] = chunk   # K007: length-safe -- a short read must not RESIZE buf
     # These bytes become OUTPUT (cmd_extract emits them as "snapshot-shared with the latest snapshot"),
     # so the clusters behind them must be present in the image. A punched cluster here produced five
     # zero bytes under that label with rc=0 -- see analysis/reports/d13_gap_2026-09-09/.
@@ -2388,7 +2848,9 @@ def _recover_inline_extent_content(f, ps, cs, tr, vd, _defer_ctx=None):
     buf = bytearray(stream_size)            # holes stay zero (sparse)
     for fv, vlcn, run in exts:
         if vlcn == 0:
-            continue                        # sparse hole -> leave zero-filled (never read PLCN 0 / boot region)
+            # A hole reaches this tuple path already normalised to 0 by the decoder (E98); 0 is also the
+            # read-time floor, since PLCN 0 is the boot region and is never a file's content.
+            continue
         for j in range(run):
             off = (fv + j) * cs
             if off >= stream_size:
@@ -2440,38 +2902,88 @@ def _verify_inline_integrity(f, ps, cs, tr, vd):
         return None
     ecount = le32(v, ihdr + 0x14)
     ncl = _volume_ncl(f, ps, cs)
-    res = {"checked": 0, "ok": 0, "unset": 0, "bad": [], "bad_count": 0}
+    res = {"checked": 0, "ok": 0, "unset": 0, "bad": [], "bad_count": 0,
+           "clusters_with_crc": 0, "disagreements": [], "rows_unreadable": 0}
     inline = False
     pos = ihdr + 0x28
     for _i in range(ecount):
         if pos + 24 > len(v):
             break
-        vlcn = le64(v, pos); run = le32(v, pos + 0x14); fvcn = le32(v, pos + 0x0C); flag = le32(v, pos + 8)
+        vlcn = le64(v, pos); run = le32(v, pos + 0x14); fvcn = le32(v, pos + 0x0C)
+        flags_u32 = le32(v, pos + 8)
         if not (0 < run <= ncl and (vlcn == 0 or 0 < vlcn < ncl)):
             break
-        checksummed = (flag == INTEGRITY_EXTENT_FLAG and run == 1)
-        if checksummed and vlcn > 0 and pos + 32 <= len(v):
+        # A3: every cluster of the run, not just a run of one. The row says how many CRCs it carries.
+        crcs, dis = _extent_row_crcs(v, pos, run)
+        if dis:
+            res["disagreements"].append(dis)
+        if crcs and not _extent_is_hole(flags_u32, vlcn):
             inline = True
-            stored = le32(v, pos + 24)                 # element[+0] = CRC32-C(cluster); element[+4] reserved (ignore)
-            if stored == _INTEGRITY_UNSET:
-                res["unset"] += 1
-            else:
+            res["clusters_with_crc"] += len(crcs)
+            for _j, stored in enumerate(crcs):
+                if stored == _INTEGRITY_UNSET:
+                    res["unset"] += 1
+                    continue
                 try:
-                    plcn = tr.tr(vlcn) if tr else vlcn
+                    plcn = tr.tr(vlcn + _j) if tr else (vlcn + _j)
                     f.seek(ps + plcn * cs); data = f.read(cs)
                 except Exception:
                     data = b""
-                if len(data) == cs:
-                    res["checked"] += 1
-                    actual = _crc32c(data)
-                    if actual == stored:
-                        res["ok"] += 1
-                    else:
-                        res["bad_count"] += 1
-                        if len(res["bad"]) < 64:
-                            res["bad"].append((fvcn, vlcn, plcn, stored, actual))
-        pos += 32 if checksummed else 24               # checksummed extent has a 32-byte stride (24 + 8-byte element)
+                if len(data) != cs:
+                    # A cluster the volume vouches for that could not be READ is not "nothing to say":
+                    # it is coverage the verdict must not claim. Counted, and surfaced by the callers.
+                    res["rows_unreadable"] += 1
+                    continue
+                res["checked"] += 1
+                actual = _crc32c(data)
+                if actual == stored:
+                    res["ok"] += 1
+                else:
+                    res["bad_count"] += 1
+                    if len(res["bad"]) < 64:
+                        res["bad"].append((fvcn + _j, vlcn + _j, plcn, stored, actual))
+        step = _extent_row_size(v, pos, run)
+        if step == 0:
+            # The row's declared size is neither 24 nor 24+4*run: striding on a guess is how the old
+            # 24-vs-32 rule walked into the middle of a CRC array. Stop and say the parse is short.
+            res["rows_unreadable"] += 1
+            break
+        pos += step
     return res if inline else None
+
+
+def _integrity_report(iv, name, prog=None):
+    """A3: the ONE place an inline CRC-32C result is turned into words. Returns True when the volume's own
+    checksums say the bytes are wrong -- the caller turns that into exit 2. Printed to stderr so stdout
+    stays the file.
+
+    Previously each call site phrased its own verdict, and only ONE branch of `extract` called the verifier
+    at all -- so a file whose bytes reached the operator by the other branch carried no integrity statement
+    of any kind, clean or otherwise. Silence is not a clean result."""
+    pr = prog or PROG
+    if iv is None:
+        return False
+    if iv.get("disagreements"):
+        print(f"[{pr}] NOTE: {len(iv['disagreements'])} integrity row(s) of '{name}' declare a size and a "
+              f"flag that disagree; they were read by the declared size: {iv['disagreements'][0]}",
+              file=sys.stderr)
+    if iv.get("rows_unreadable"):
+        print(f"[{pr}] WARNING: {iv['rows_unreadable']} checksummed cluster(s) of '{name}' could not be "
+              f"read, so they are NOT covered by the result below.", file=sys.stderr)
+    if iv["bad_count"] == 0:
+        if iv["checked"] or iv.get("unset"):
+            extra = f", {iv['unset']} unset" if iv["unset"] else ""
+            print(f"[{pr}] integrity: {iv['ok']}/{iv['checked']} clusters CRC32-C-verified{extra}.",
+                  file=sys.stderr)
+        return False
+    print(f"[{pr}] WARNING: INTEGRITY MISMATCH — {iv['bad_count']} of {iv['checked']} checksummed clusters "
+          f"FAILED CRC32-C (possible corruption/tampering; bytes still extracted):", file=sys.stderr)
+    for _fv, _vl, _pl, _st, _ac in iv["bad"][:8]:
+        print(f"[{pr}]   file_vcn={_fv} vlcn={_vl} plcn={_pl} stored=0x{_st:08x} actual=0x{_ac:08x}",
+              file=sys.stderr)
+    if iv["bad_count"] > 8:
+        print(f"[{pr}]   ... and {iv['bad_count'] - 8} more", file=sys.stderr)
+    return True
 
 
 def recover_snapshot_streams(f, ps_off, cs, tr, vd):
@@ -2755,8 +3267,133 @@ for _ci in range(256):
 REFS_CRC64_SENTINEL = 0xABBAFFFFABBAFFFF
 
 
+# ─── A9: page-reference digests on the read path ────────────────────────────────────────────────
+# A B+-tree INNER row binds its child page to a digest of that page's contents, so the metadata tree
+# is a Merkle tree the whole way down -- not only at the Object-Table root, which is all
+# `verify_page_references` covers. The reference has THREE forms and the digest is NOT where the
+# Object-Table row keeps it:
+#
+#   value len 48 : 4x u64 LCN, digest_len 8  at +0x24, CRC64    at +0x28   (cktype 2)
+#   value len 72 : 4x u64 LCN, digest_len 32 at +0x24, SHA-256  at +0x28   (cktype 4)
+#   value len 104: the OBJECT-TABLE row form -- digest_len at +0x44, digest at +0x48
+#
+# Reading the 104-byte frame on a 48-byte row is why this looked for a while like "inner references
+# carry no digest at all". Measured at +0x28: 616 of 616 inner references verify across v3.4 and v3.14,
+# 4 KiB and 64 KiB clusters, CRC64 and SHA-256, including a real Windows installation.
+#
+# COST, measured end-to-end on a real Windows installation (`winsider`, 34,617 metadata pages / 541 MiB;
+# all distinct, so caching buys nothing):
+#
+#     files     9.5 s -> 32.3 s   (3.4x)
+#     summary   5.0 s -> 29.1 s   (5.8x)
+#     dataruns  0.2 s ->  0.1 s   (no tree walk: unaffected)
+#
+# The digest is a pure-Python CRC64 at ~9 MB/s and a stdlib slice-by-8 rewrite reaches only ~1.46x, so
+# the CRC is ~50x the BARE WALK -- but the walk is a small part of a real command, which is why the
+# end-to-end figure is 3-6x. Quote the end-to-end number to users; the 50x is about the walk alone.
+# So this is OPT-IN (`--verify-pages`), it says up front that it is slow, and the default path is
+# unchanged -- while never claiming pages were checked.
+_VERIFY_PAGES = False
+_PAGE_VERIFY = {"checked": 0, "ok": 0, "bad": [], "no_digest": 0, "unreadable": 0, "_seen": set()}
+
+
+def _page_ref_digest(vd):
+    """(digest_len, digest_bytes) for a B+-tree page reference, or None when the row carries none.
+    Length at +0x24, digest at +0x28 -- the inner-row frame, NOT the Object-Table row's +0x44/+0x48."""
+    if len(vd) < 0x28:
+        return None
+    dlen = le32(vd, 0x24)
+    if dlen not in (8, 32) or len(vd) < 0x28 + dlen:
+        return None
+    return (dlen, bytes(vd[0x28:0x28 + dlen]))
+
+
+def _verify_child_page(vd, page, where):
+    """Check a child page against the digest in the parent row that pointed at it. Records the outcome
+    and returns True only when a digest existed AND matched."""
+    d = _page_ref_digest(vd)
+    if d is None:
+        _PAGE_VERIFY["no_digest"] += 1
+        return False
+    dlen, stored = d
+    # One page, one verdict. `walk_bplus` is entered per object and each entry carries its own
+    # `visited` set, so the same child page can be reached more than once in a run; counting it twice
+    # would report one damaged page as two.
+    key = (where, stored)
+    if key in _PAGE_VERIFY["_seen"]:
+        return True
+    _PAGE_VERIFY["_seen"].add(key)
+    _PAGE_VERIFY["checked"] += 1
+    calc = struct.pack("<Q", refs_crc64(page)) if dlen == 8 else hashlib.sha256(page).digest()
+    if calc == stored:
+        _PAGE_VERIFY["ok"] += 1
+        return True
+    if len(_PAGE_VERIFY["bad"]) < 32:
+        _PAGE_VERIFY["bad"].append((where, stored.hex()[:16], calc.hex()[:16]))
+    return False
+
+
+def _arm_page_verification():
+    """Turn on A9's on-read checking. Called from BOTH command paths (argparse and the forensic
+    dispatch); the warning text lives here so the two cannot drift apart."""
+    global _VERIFY_PAGES
+    if _VERIFY_PAGES:
+        return
+    _VERIFY_PAGES = True
+    # Printed BEFORE the work starts, not after: someone who did not expect the extra time should be
+    # able to stop it, and someone who did should see that it is running.
+    print(f"[{PROG}] --verify-pages: every metadata page will be checked against the digest in its "
+          f"parent page reference. This is SLOWER — measured on a real Windows installation, a "
+          f"tree-walking command takes 3-6x as long (`files` 9.5s -> 32.3s). Commands that do not walk "
+          f"the tree are unaffected.", file=sys.stderr)
+    atexit.register(_report_page_verification)
+
+
+def _report_page_verification():
+    """A9's at-exit report. It states COVERAGE, not a verdict: `--verify-pages` checks the pages this
+    command happened to read, which is not the whole volume, and saying "no tampering" on that basis is
+    exactly the shape of K031. A mismatch is named with both digests so it can be checked by hand."""
+    v = _PAGE_VERIFY
+    if not (v["checked"] or v["bad"] or v["no_digest"]):
+        print(f"[{PROG}] --verify-pages: this command read no child metadata page, so nothing was "
+              f"checked.", file=sys.stderr)
+        return
+    print(f"[{PROG}] --verify-pages: {v['ok']}/{v['checked']} metadata page(s) matched the digest in "
+          f"their parent reference" + (f", {v['no_digest']} reference(s) carried no digest"
+                                       if v["no_digest"] else "") + ".", file=sys.stderr)
+    if v["bad"]:
+        print(f"[{PROG}] WARNING: {len(v['bad'])} page(s) DID NOT match their parent's digest — the "
+              f"metadata was altered after it was written, or the image is damaged:", file=sys.stderr)
+        for where, stored, calc in v["bad"][:8]:
+            print(f"[{PROG}]   {where}  stored={stored}…  computed={calc}…", file=sys.stderr)
+        if len(v["bad"]) > 8:
+            print(f"[{PROG}]   … and {len(v['bad']) - 8} more", file=sys.stderr)
+    print(f"[{PROG}] This covers the pages THIS command read, not the whole volume; "
+          f"`integrity --fullchecksums` walks the metadata tree instead.", file=sys.stderr)
+    if v["bad"]:
+        # rc 2 is this tool's "a finding was reported" code (usage errors are 1). A page that does not
+        # match its parent's digest is exactly that, so a script can branch on it.
+        #
+        # `os._exit` skips the interpreter's own flush, and `extract` writes BINARY content to stdout --
+        # exiting without flushing would truncate the very bytes the examiner asked for. Flush both
+        # streams first, and ignore a flush error (a closed pipe downstream is not this check's problem).
+        for _s in (sys.stdout, sys.stderr):
+            try:
+                _s.flush()
+            except Exception:
+                pass
+        os._exit(2)
+
+
 def refs_crc64(data):
-    """ReFS metadata CRC64 (cktype 2) over a full metadata page."""
+    """ReFS metadata CRC64 (cktype 2) over a full metadata page.
+
+    Byte-at-a-time and ~11 MiB/s. RC2 put this on a hot path (root pages are verified on the listing and
+    content paths), so a slicing-by-8 rewrite was tried and REVERTED: in pure Python it measured 12 MiB/s
+    against 11 -- interpreter overhead dominates the table lookups, so the extra tables and a second
+    implementation bought nothing. The cost of root-page verification is the hash itself, and it is the
+    price of not listing an altered page silently.
+    """
     crc = 0xFFFFFFFFFFFFFFFF
     for b in data:
         crc = _REFS_CRC64_TBL[(crc ^ b) & 0xFF] ^ (crc >> 8)
@@ -3001,23 +3638,80 @@ def scan_mlog_data_area(f, ps_off, cs, tr, mlog_info, ctrl):
             }
 
 
-def try_parse_redo_block(data, redo_ops):
-    """Parse data as _SmsRedoHeader with inner _SmsRedoRecord entries."""
-    if len(data) < 8:
-        return []
-    total_size = le32(data, 0)
-    first_off = le32(data, 4)
-    if total_size < MIN_REDO_SIZE or total_size > len(data):
-        return []
-    if first_off < 8 or first_off >= total_size:
-        return []
+# ─── A2: MLog framing, taken from the driver rather than inferred ────────────────────────────────
+# Two functions in refs.sys define it, and the shipped parser disagreed with both.
+#
+#   CmsRestarter::ForEachBlockInMergedBlock(lsn, blk, remaining, cb, ctx)
+#       while blk[0] != 0 and blk[0] <= remaining:
+#           cb(blk); remaining -= blk[1] + blk[0]; blk += blk[1] + blk[0]     # first_off + total_size
+#
+#   CmsRestarter::ForEachRedoInBlock(lsn, i, hdr, cb, ctx)
+#       budget = hdr[0]                    # total_size -- NOT total_size - first_off
+#       p = hdr + hdr[1]                   # skip to the first record
+#       while p[0] != 0 and p[0] <= budget:
+#           cb(p); budget -= p[0]; if budget < 0x38: stop; p += p[0]
+#
+# The shipped code read ONE block per payload and budgeted `total_size - first_off`. Measured with the
+# driver's rule: on `lab314_main_step3_dirty`, 11,868 payloads hold **75,695** blocks (chains up to 15),
+# 75,695 of 75,695 close exactly under `total_size` and 2 of 11,868 close under `total_size - first_off`
+# -- so the parser saw 17,540 of 128,216 records, 13.7 %. On `win11refsmini`: 364/364 vs 2/147, 137 of 746.
+#
+# And the commit flag is not absent. Under the correct budget the LAST record of a block carries bit 1 at
+# +0x2C on 75,695 of 75,695 blocks (362 of 364 on win11refsmini). The tool printed a note explaining that
+# "commit is marked at the checkpoint/LogCore layer... this is 0 on every volume, healthy or not"; every
+# clause of that was an artefact of the wrong budget truncating each block before its last record.
+
+
+def iter_redo_blocks(payload):
+    """The merged-block chain: `CmsRestarter::ForEachBlockInMergedBlock`. Yields
+    (block_index, base, total_size, first_off) for each redo block in one log payload."""
+    base, remaining, idx = 0, len(payload), 0
+    while remaining >= 8 and base + 8 <= len(payload):
+        total = le32(payload, base)
+        first = le32(payload, base + 4)
+        if total == 0 or total > remaining:
+            return
+        yield idx, base, total, first
+        step = first + total
+        if step <= 0:
+            return
+        remaining -= step
+        base += step
+        idx += 1
+
+
+def iter_redo_records(payload, base):
+    """The records of ONE redo block: `CmsRestarter::ForEachRedoInBlock`. Yields (offset, size).
+    The budget is the block's own `total_size`; `first_off` only says where the first record starts."""
+    if base + 8 > len(payload):
+        return
+    total = le32(payload, base)
+    first = le32(payload, base + 4)
+    if total + first < 8 or total < MIN_REDO_SIZE:
+        return
+    pos = base + first
+    remaining = total
+    while pos + 4 <= len(payload):
+        sz = le32(payload, pos)
+        # The driver's loop condition is exactly `*p != 0 && *p <= budget` -- it does NOT impose a minimum
+        # on a RECORD's size; the 0x38 floor it applies is to the remaining BUDGET, after the record is
+        # handled. An extra `sz < MIN_REDO_SIZE` test here would stop the parse where the driver continues,
+        # and the stop would be silent. Termination is still guaranteed (sz > 0 and remaining decreases).
+        if sz == 0 or sz > remaining:
+            return
+        if pos + sz > len(payload):
+            return
+        yield pos, sz
+        remaining -= sz
+        if remaining < MIN_REDO_SIZE:
+            return
+        pos += sz
+
+
+def try_parse_redo_block(data, redo_ops, base=0, block_index=0):
+    """Parse ONE _SmsRedoHeader at `base` into its inner _SmsRedoRecord entries."""
     records = []
-    remaining = total_size - first_off
-    pos = first_off
-    while remaining >= MIN_REDO_SIZE and pos + MIN_REDO_SIZE <= len(data):
-        rec_size = le32(data, pos)
-        if rec_size < MIN_REDO_SIZE or rec_size > remaining or rec_size == 0:
-            break
+    for pos, rec_size in iter_redo_records(data, base):
         opcode = le32(data, pos + 4)
         table_path_len = le32(data, pos + 8) if pos + 12 <= len(data) else 0
         obj_id = le64(data, pos + 0x20) if pos + 0x28 <= len(data) else 0
@@ -3030,10 +3724,17 @@ def try_parse_redo_block(data, redo_ops):
             "object_id": obj_id, "flags": flags,
             "txn_start": bool(flags & 1),
             "txn_commit": bool(flags & 2),
+            "redo_block": block_index,
         })
-        remaining -= rec_size
-        pos += rec_size
     return records
+
+
+def try_parse_redo_payload(data, redo_ops):
+    """Every record of every merged redo block in one log payload."""
+    out = []
+    for idx, base, _total, _first in iter_redo_blocks(data):
+        out.extend(try_parse_redo_block(data, redo_ops, base, idx))
+    return out
 
 
 def extract_payload_from_mlog_page(page):
@@ -3174,7 +3875,7 @@ def extract_redo_records(pages, redo_ops):
         payload = extract_payload_from_mlog_page(page)
         if payload is None:
             continue
-        recs = try_parse_redo_block(payload, redo_ops)
+        recs = try_parse_redo_payload(payload, redo_ops)      # A2: every merged block, not just the first
         if recs:
             for r in recs:
                 r["vlcn"] = pinfo["vlcn"]
@@ -3232,7 +3933,13 @@ def _mlog_extract_timestamp(rec, rs, opcode, tpl, vc, vbase):
             v1_off = le32(rec, v1p)
             v1_len = le32(rec, v1p + 4)
             if v1_off + v1_len <= rs and v1_len >= 0x20:
-                for off in (0x90, 0xa0, 0x30, 0x28, 0x08, 0x00):
+                # K059: `+0x90` was tried FIRST and it is the volume's FORMAT time, so every
+                # volume-information update inherited the moment the volume was created rather than the
+                # moment it was written -- 23 MLog events on lab314_main_step3_dirty all carried
+                # 2026-09-06 16:17:19, which is exactly `Volume created`. `+0xA0` is the written
+                # modify/mount time; the last record's value matches `Volume modified` to the
+                # hundredth of a second. Ask for the write time first.
+                for off in (0xa0, 0x90, 0x30, 0x28, 0x08, 0x00):
                     if off + 8 <= v1_len:
                         val = le64(rec, v1_off + off)
                         if _FT_MIN < val < _FT_MAX:
@@ -3353,25 +4060,18 @@ def extract_mlog_transactions(pages, redo_ops):
         if payload is None or len(payload) < 8:
             continue
         _eh = le32(page, 0x54); _dstart = _eh + le32(page, _eh + 0x28)  # payload start within the MLog block
-        total_sz = le32(payload, 0)
-        first_rec = le32(payload, 4)
-        if total_sz < MIN_REDO_SIZE or first_rec < 8 or first_rec >= total_sz:
-            continue
+        # A2: one source for the framing. This loop used to be a second, independent copy of
+        # `try_parse_redo_block` -- carrying the same wrong budget and the same one-block-per-payload
+        # assumption -- so the two surfaces agreed with each other and with neither the driver nor the disk.
         recs = []
-        remaining = total_sz - first_rec
-        pos = first_rec
-        while remaining >= MIN_REDO_SIZE and pos + MIN_REDO_SIZE <= len(payload):
-            rec_size = le32(payload, pos)
-            if rec_size < MIN_REDO_SIZE or rec_size > remaining or rec_size == 0:
-                break
-            rec_bytes = payload[pos:pos + rec_size]
-            r = parse_mlog_deep_record(rec_bytes, redo_ops)
-            r["plcn"] = pinfo["plcn"]
-            r["rec_off"] = _dstart + pos  # B3: byte offset within the MLog block; disk = ps + plcn*cs + block*MLOG_BLOCK + rec_off
-            r["block"] = pinfo.get("block", 0)
-            recs.append(r)
-            remaining -= rec_size
-            pos += rec_size
+        for _bi, _base, _tot, _first in iter_redo_blocks(payload):
+            for pos, rec_size in iter_redo_records(payload, _base):
+                r = parse_mlog_deep_record(payload[pos:pos + rec_size], redo_ops)
+                r["plcn"] = pinfo["plcn"]
+                r["rec_off"] = _dstart + pos  # B3: byte offset within the MLog block; disk = ps + plcn*cs + block*MLOG_BLOCK + rec_off
+                r["block"] = pinfo.get("block", 0)
+                r["redo_block"] = _bi
+                recs.append(r)
         if recs:
             txns.append({"plcn": pinfo["plcn"], "block": pinfo.get("block", 0),
                          "records": recs})
@@ -3636,17 +4336,21 @@ class UsnRecord:
 _usn_nonv3_warned = False
 
 def _warn_usn_nonv3(versions):
-    """One-time light warning when a non-V3 USN record is accepted (N1). ReFS on-disk records are V3;
-    the decoder only knows the V3 field layout, so V2/V4 records are parsed with V3 offsets and NOT
-    validated. We do not refuse them (per user request) — we flag them once."""
+    """One-time warning that non-V3 USN records were found and REFUSED (B5/K073).
+
+    ReFS on-disk records are V3. Only the V3 field layout is implemented, and a V2 record's name
+    length/offset live at +0x38/+0x3A rather than V3's +0x48/+0x4A -- so decoding one with V3 offsets
+    would fabricate its fields. They are therefore not decoded, and are reported as refused records
+    rather than as unparseable bytes, which is what they used to be counted as."""
     global _usn_nonv3_warned
     if _usn_nonv3_warned:
         return
     _usn_nonv3_warned = True
     vs = "/".join("V%d" % v for v in sorted(versions))
-    print("[%s] NOTE: USN record version(s) %s encountered. ReFS journals are normally V3; the decoder uses "
-          "the V3 field layout, so %s records are parsed with V3 offsets and their fields are NOT validated "
-          "for that version (V2 is NTFS's 64-bit form, V4 is NTFS-only range tracking — see erratum E58)."
+    print("[%s] NOTE: USN record version(s) %s encountered and NOT decoded. ReFS journals are V3 and only "
+          "the V3 field layout is implemented; a %s record places its name length/offset elsewhere, so "
+          "decoding it with V3 offsets would fabricate its fields. The records are counted and reported, "
+          "not silently dropped (V2 is NTFS's 64-bit form, V4 is NTFS-only range tracking — erratum E58)."
           % (PROG, vs, vs), file=sys.stderr)
 
 
@@ -3668,8 +4372,10 @@ def parse_usn_records(j_data, alloc=None):
     records = []
     off = 0
     end = len(j_data)
-    nonv3 = set()
+    nonv3 = {}             # B5/K073: {major: count} of records refused because their version is not V3
     slack_bytes = 0        # zero-filled: the ring has not reached here yet -- normal
+    zero_runs = []         # B5: [start, end) runs of zero-length records, classified after the scan
+    last_rec_end = 0       # B5: end of the last accepted record = the end of the written span
     torn_bytes = 0         # NON-zero bytes that parse as no record -- a real anomaly
     usn_violations = 0
     while off < end - USN_MIN_RECORD:
@@ -3678,6 +4384,16 @@ def parse_usn_records(j_data, alloc=None):
             # A zero record length is unwritten ring space, not damage: a journal that has never
             # wrapped is mostly zeros (132 MB of 134 MB on one corpus volume). Counted separately
             # so the caveat fires for torn data and stays silent for an empty journal.
+            #
+            # B5/K067/K068: but that is only true OUTSIDE the written span. A record's USN IS its byte
+            # offset (measured 217,892/217,892 on winsider), so the region between the first and last
+            # record is ground the ring has already written -- zeros THERE are records that were
+            # destroyed, not space that was never used. The runs are tracked now and classified once the
+            # span is known, because the span is not known until the scan finishes.
+            if zero_runs and zero_runs[-1][1] == off:
+                zero_runs[-1][1] = off + 8
+            else:
+                zero_runs.append([off, off + 8])
             off += 8; slack_bytes += 8; continue
         if rec_len < USN_MIN_RECORD or rec_len > USN_MAX_RECORD or (rec_len & 7) != 0:
             off += 8; torn_bytes += 8; continue
@@ -3692,6 +4408,17 @@ def parse_usn_records(j_data, alloc=None):
         # field layout — so those records are decoded with V3 offsets and flagged once via _warn_usn_nonv3.
         if major < 2 or major > 4:
             off += 8; torn_bytes += 8; continue
+        if major != 3:
+            # B5/K073: a V2/V4 record is a RECORD, not unparseable bytes. It used to fall through to
+            # the V3 field check below, which reads the name length/offset at +0x48/+0x4A -- V3
+            # positions. A real V2 carries them at +0x38/+0x3A, so the check failed and the record was
+            # counted as "torn bytes ... unwritten ring space or a torn record at the write head": a
+            # confident and wrong explanation for a record the decoder simply does not implement.
+            # It is refused EXPLICITLY here instead. Decoding it with V3 offsets is not the
+            # alternative -- that fabricates every field.
+            nonv3[major] = nonv3.get(major, 0) + 1
+            off += (rec_len + 7) & ~7
+            continue
         name_off_field = le16(j_data, off + 0x4A)
         name_len_field = le16(j_data, off + 0x48)
         if name_off_field < 0x4C or name_off_field + name_len_field > rec_len:
@@ -3700,14 +4427,64 @@ def parse_usn_records(j_data, alloc=None):
         if alloc and _r.usn % alloc != off:
             usn_violations += 1
         records.append(_r)
-        if major != 3:
-            nonv3.add(major)
         off += (rec_len + 7) & ~7
+        last_rec_end = off          # B5: the written span ends with the LAST RECORD, not where the
+                                    # scan stopped -- using the scan end counted every byte of
+                                    # legitimate trailing slack as destroyed on healthy volumes.
     if nonv3:
         _warn_usn_nonv3(nonv3)
+        _skip_note("USN journal",
+                   "%d record(s) whose version is not V3 (%s) -- ReFS journals are V3 and only the V3 "
+                   "field layout is implemented, so these were NOT decoded" % (
+                       sum(nonv3.values()), ", ".join("V%d x%d" % (k, v) for k, v in sorted(nonv3.items()))),
+                   ValueError("non-V3 USN record refused"))
     if usn_violations:
         _skip_note("USN journal", "%d record(s) whose USN is not their journal offset"
                    % usn_violations, ValueError("usn %% alloc != offset"))
+    # B5/K067/K068: classify the zero runs now that the written span is known.
+    #
+    # "Any zero inside the span is destroyed data" is WRONG, and measuring says so: a healthy journal
+    # carries small inter-record zero gaps throughout its written span (759 gaps / 47,784 bytes on
+    # lab314_main, 96 / 5,696 on win11bidule), so that rule fires on every healthy volume.
+    #
+    # The discriminator used instead is structural, not a tuned threshold: a contiguous zero run longer
+    # than USN_MAX_RECORD is space in which at least one WHOLE record could have lived and none does --
+    # a hole, not padding. Measured: the largest healthy gap is 104 bytes (lab314_main) and 152
+    # (win11bidule), so healthy volumes have ZERO such runs, while 1 MiB of deliberately zeroed journal
+    # produces exactly one.
+    #
+    # LIMIT, stated because it matters forensically: this detects BULK destruction. Zeroing fewer than
+    # USN_MAX_RECORD bytes -- a handful of surgically removed records -- is below this bound and is NOT
+    # detected here. Absence of this warning is not evidence the journal is complete.
+    destroyed_bytes = 0
+    destroyed_runs = 0
+    if records and zero_runs:
+        live_lo = records[0].offset if hasattr(records[0], "offset") else 0
+        live_hi = last_rec_end                          # end of the LAST RECORD (not the scan end)
+        for a, b in zero_runs:
+            lo, hi = max(a, live_lo), min(b, live_hi)
+            if hi - lo > USN_MAX_RECORD:
+                destroyed_bytes += hi - lo
+                destroyed_runs += 1
+    if destroyed_bytes:
+        slack_bytes -= destroyed_bytes
+        _skip_note("USN journal",
+                   "%d zero byte(s) in %d run(s) INSIDE the written span, each larger than one whole "
+                   "record: this is not unwritten ring space, it is journal that was destroyed, and the "
+                   "surviving records are NOT the whole journal" % (destroyed_bytes, destroyed_runs),
+                   ValueError("zeroed journal region"))
+    # B5/K068: the whole-journal case. A $J that is ALLOCATED but yields no records and holds no
+    # non-zero byte anywhere is either a journal that was never written or one that was wiped -- the
+    # stream alone cannot tell those apart, and reporting "0 records" picks the innocent reading
+    # silently. Census over the 102-image corpus: 81 volumes have no journal entry at all, 21 have
+    # records, and NOT ONE is allocated-but-empty, so this is not a state healthy volumes exhibit.
+    if not records and j_data and not any(j_data):
+        _JOURNAL_WIPE_SUSPECT.append(len(j_data))
+        _skip_note("USN journal",
+                   "the $J stream is allocated (%d bytes) but holds NO records and not one non-zero "
+                   "byte: this is a journal that was never written OR one that was wiped, and the "
+                   "stream cannot distinguish them -- do not read it as 'no activity'" % len(j_data),
+                   ValueError("journal allocated but entirely zero"))
     if torn_bytes:
         # Non-zero and not a record. On the corpus these regions hold PRIOR CLUSTER CONTENTS --
         # `GFSAREPLAY` marker text and BitLocker signatures -- i.e. ring space the journal was
@@ -3716,19 +4493,47 @@ def parse_usn_records(j_data, alloc=None):
         # analyst knows the journal is not fully accounted for.
         _skip_note("USN journal", "%d non-zero byte(s) that parse as no record (unwritten ring space "
                    "still holding prior cluster contents, or a torn record at the write head)"
-                   % torn_bytes, ValueError("unparseable journal bytes"))
+                   % torn_bytes, ValueError("unparseable journal bytes"), expected=True)
     return records
+
+
+def _journal_unreadable_or_wiped():
+    """True when the journal could not be read, or is allocated-but-entirely-zero (B5/K068/K069).
+
+    Shared so the surfaces cannot disagree: `timeline` used to print "USN journal inactive on this
+    image" over a journal that had been wiped, which is a positive claim about the volume's
+    configuration drawn from an absence the tool cannot explain.
+    """
+    # NOTE: _SKIP_NOTES is keyed (stage, exception TYPE NAME) -- the message is not stored, so the
+    # condition is recorded on its own flag rather than pattern-matched out of the key.
+    return bool(_JOURNAL_WIPE_SUSPECT) or any(
+        stage.startswith("locate_change_journal") for (stage, _e) in _SKIP_NOTES)
+
+
+def _journal_lookup_was_incomplete():
+    """True when the FS-metadata directory walk failed or was only partly readable (B4/K047)."""
+    return any(stage.startswith("locate_change_journal") for (stage, _exc) in _SKIP_NOTES)
 
 
 def locate_change_journal(f, ps, cs, tr, obj_map):
     """Find Change Journal entry in OID 0x520 (FS Metadata directory)."""
+    # B4/K047: (None, None) used to mean three different things -- the directory is absent, the walk
+    # RAISED, or the directory was read and holds no journal. The caller turned all three into the
+    # positive claim "journal not activated". The reason is now recorded so the caller can tell them apart.
     if OID_FS_METADATA not in obj_map:
         return None, None
     vlcns = obj_map[OID_FS_METADATA]
+    _dmg_before = len(_WALK_DAMAGE)
     try:
         rows = walk_bplus(f, ps, cs, tr, vlcns)
-    except Exception:
+    except Exception as _e:
+        _skip_note("locate_change_journal", "FS-metadata directory walk", _e)
         return None, None
+    if len(_WALK_DAMAGE) > _dmg_before:
+        # The walk completed but could not read part of the directory: absence is not evidence. Recorded
+        # with an exception instance so the skip summary groups it by a meaningful name, not "str".
+        _skip_note("locate_change_journal", "the FS-metadata directory",
+                   IOError("part of it could not be read, so a missing journal is not evidence of absence"))
     for kd, vd in rows:
         if len(kd) < 4 or le16(kd, 0) != 0x30:
             continue
@@ -3815,7 +4620,83 @@ def _usn_parse_single_subrecord(vd, sub_off):
     return bytes(vd[data_start:data_start + data_len])
 
 
-def parse_usn_journal_streams(vd, cs, tr):
+# B5/K070: the $J's REAL length fields. The multi-instance sub-record MARKER declares size 917632
+# (= 0x000E0080), which is the $DATA descriptor constant and not a length -- reading it as one truncated
+# every journal larger than ~896 KB. Concluding from that constant that "$J has no real length field"
+# was a frame error: the real fields sit in the same value, in the embedded $DATA row whose inline-header
+# offset (value+0x00) is 0x88. Measured on all 21 corpus volumes that have a journal: exactly one row
+# matches, and its four fields all equal the sum of the $J extents' clusters, across 32/64/128 MiB
+# allocations, both cluster sizes and a 4Kn volume. The row's KEY TYPE varies (0xf8, 0x108, 0x190,
+# 0xa00, 0xc30) and is not a discriminator.
+_USN_LEN_ROW_IHDR = 0x88
+_USN_LEN_FIELDS = (("alloc", 0x30), ("size", 0x38), ("vdl", 0x40), ("disk_alloc", 0x48))
+
+
+def _usn_declared_lengths(vd, ctx=None):
+    """The $J's declared lengths, or None when the row is not present/readable."""
+    try:
+        for kd, v in parse_resident_btree_rows(vd, ctx):
+            if len(v) >= 0x50 and le32(v, 0) == _USN_LEN_ROW_IHDR:
+                out = {name: le64(v, off) for name, off in _USN_LEN_FIELDS}
+                if out["alloc"]:
+                    return out
+    except Exception as _e:
+        _skip_note("USN journal", "the $J declared-length row", _e)
+    return None
+
+
+def _usn_highest_file_pointer(f, ps, cs, tr, obj_map):
+    """Highest per-file LastUsn on the volume — an INDEPENDENT witness to how far the journal got.
+
+    B3/K069. Every file records the virtual `$UsnJrnl:$J` byte offset of its OWN most recent record at
+    `$SI+0x40` (value+0x68; disk-proven 480/480). Those pointers live in the FILES' records, not in `$J`,
+    so they SURVIVE a wipe of the journal. That makes them the one witness a tail-wipe does not erase.
+
+    Why this is needed at all: a journal whose tail has been zeroed looks EXACTLY like a young journal
+    whose ring space was never written — `$J` fills a fixed allocation (32 MiB here) and a healthy volume
+    legitimately shows megabytes of trailing zeros, so nothing in the stream itself can separate the two.
+    Measured on `lab314_main`: healthy 32,004 records ending at USN 3,146,304 with the highest file
+    pointer at exactly 3,146,304; after zeroing the last 1 MiB, 21,576 records ending at 2,101,088 with
+    the highest file pointer STILL 3,146,304 — 10,428 destroyed records, named by metadata the wipe did
+    not touch. On healthy volumes the two agree exactly (verified on lab314_main, lab314_main_step3_dirty
+    and labD).
+
+    Cost: one enrich-free directory walk — ~1 s on a lab volume, ~10 s on a 60 GB Windows volume. Run only
+    when a journal with records exists, so the 81 of 102 corpus volumes without one pay nothing.
+    """
+    try:
+        best = 0
+        for e in walk_directory_tree(f, ps, cs, tr, obj_map, 0x600, DEFAULT_DEPTH, False, set()):
+            u = e.get("usn") or 0
+            if isinstance(u, int) and u > best:
+                best = u
+        return best
+    except Exception as _e:
+        _skip_note("USN journal", "the per-file LastUsn witness", _e)
+        return 0
+
+
+def _usn_report_destroyed_tail(f, ps, cs, tr, obj_map, records, indent="    "):
+    """Compare the surviving journal against the per-file pointers; report and flag destroyed records."""
+    if not records:
+        return 0
+    usn_max = max(r.usn for r in records)
+    witness = _usn_highest_file_pointer(f, ps, cs, tr, obj_map)
+    gap = witness - usn_max
+    if gap <= USN_MAX_RECORD:
+        return 0
+    _JOURNAL_TAIL_DESTROYED.append(gap)
+    print("%sJournal tail:   DAMAGED — the surviving records end at USN %d, but a file on this volume "
+          "still points at USN %d." % (indent, usn_max, witness))
+    print("%s                That pointer lives in the file's own record, not in $J, so it survived: "
+          "%d bytes of journal after the last surviving record were DESTROYED (zeroed or overwritten)."
+          % (indent, gap))
+    print("%s                The records listed are NOT the whole journal and the timeline they support "
+          "is incomplete." % indent)
+    return gap
+
+
+def parse_usn_journal_streams(vd, cs, tr, ctx=None):
     """Parse sub-records and extent tables from the Change Journal value."""
     markers = _usn_find_subrecord_markers(vd)
     extent_tables = _usn_scan_extent_tables(vd, tr)
@@ -3843,29 +4724,46 @@ def parse_usn_journal_streams(vd, cs, tr):
         "j_extents": j_extents, "j_stream_size": j_stream_size,
         "max_extents": max_extents, "max_stream_size": max_stream_size,
         "metadata_raw": metadata_raw, "subrecord_count": len(markers),
+        # B5/K070: the declared lengths, and whether they agree with what the extents actually allocate.
+        "j_declared": _usn_declared_lengths(vd, ctx),
     }
 
 
 def read_usn_j_stream(f_handle, ps, cs, extents, stream_size=0, _content_what=None):
     """Read the USN $J data stream from disk following its extent descriptors.
 
-    The read length is the **allocated size** (Σ of the extents' clusters). The `$J` journal fills its
+    The read length is the **allocated size** — the span the extents reach, `max(file_vcn + clusters)`
+    (K074; it is the same as their sum whenever the map is contiguous from VCN 0, which it is on every
+    corpus journal, but the span is what stays correct when it is not). The `$J` journal fills its
     allocation — a bounded rolling log whose old records are overwritten in place — so the whole allocation
-    must be read. `stream_size` is NOT a real length: it comes from the value's $DATA sub-record **descriptor
-    `0x000E0080`** (= 917632), and capping the read at it truncated every journal larger than ~896 KB to its
-    first ~896 KB (fixed 2026-08-21 — it dropped ~97 % of a busy volume's records). The parameter is kept for
-    call-site compatibility but ignored. `parse_usn_records` validates each record, so the zero/slack tail of a
+    must be read. The `stream_size` PARAMETER is not a real length: it carries the multi-instance sub-record
+    marker's declared size, which is the $DATA descriptor constant **`0x000E0080`** (= 917632); capping the
+    read at it truncated every journal larger than ~896 KB to its first ~896 KB (fixed 2026-08-21 — it
+    dropped ~97 % of a busy volume's records). The parameter is kept for call-site compatibility but ignored.
+
+    That constant is NOT evidence the journal has no length field, and saying so was a frame error (B5/K070):
+    the real lengths live in the same value, in the embedded $DATA row whose inline header offset is 0x88 --
+    alloc/size/VDL/disk-alloc at +0x30/+0x38/+0x40/+0x48, all equal to the extents' allocated size on all 21
+    corpus journals. They are read by `_usn_declared_lengths` and a disagreement is reported, because reading
+    the whole allocation is right for RECOVERY while a shrunken declaration is evidence of tampering. `parse_usn_records` validates each record, so the zero/slack tail of a
     partially-filled journal is skipped and reading the full allocation is complete (corpus-verified: 0 duplicate
     USNs, ~100 % of records carry a name)."""
     if not extents:
         return b""
-    alloc_size = sum(e["clusters"] for e in extents) * cs
+    # K074: this was the SUM of the extents' clusters, which equals the true span only when the map is
+    # contiguous from VCN 0. It is on all 7 corpus journals -- the audit measured 0 dropped, 0 clipped --
+    # so the defect is latent, not live. But on a sparse or out-of-order map the sum is SHORTER than the
+    # span, and then `file_off >= alloc_size` DROPS the tail extents and `nbytes = min(...)` CLIPS the one
+    # that straddles the boundary. Size the buffer by where the extents actually reach.
+    alloc_size = max(e["file_vcn"] + e["clusters"] for e in extents) * cs
     buf = bytearray(alloc_size)
     _runs = []
     for ext in extents:
         file_off = ext["file_vcn"] * cs
         if file_off >= alloc_size:
             continue
+        if _ext_skip_read(ext):
+            continue                      # A1: hole or VLCN 0 -> stays zero, never read
         nbytes = min(ext["clusters"] * cs, alloc_size - file_off)
         _runs.append((ext["plcn"], ext["clusters"], file_off))
         f_handle.seek(ps + ext["plcn"] * cs)
@@ -3905,6 +4803,24 @@ def parse_usn_journal_metadata(streams, f_handle, ps, cs):
             if len(max_data) >= 40:
                 meta["lowest_valid_usn"] = le64(max_data, 24)
         meta["max_raw"] = max_data[:64].hex() if max_data else ""
+    elif streams.get("metadata_raw") and len(streams["metadata_raw"]) >= 0x24:
+        # B5/K071: $Max is ~40 bytes, so it is RESIDENT -- it has no extents, and gating the parse on
+        # `max_extents` meant the parameters were never read and `usn --info` printed only "Extents: 0".
+        # They live in the single-instance sub-record, behind a small header: a u32 at +0x08 gives the
+        # offset at which the parameters start. Measured on all 21 corpus volumes with a journal, that
+        # u32 is 12 on every one, and the u64 at that offset equals the $J allocated size on every one
+        # (32, 64 and 128 MiB volumes alike) -- which is why the previous 8-byte-aligned reads at
+        # +0x00/+0x08/+0x10/+0x18 all missed it by four bytes.
+        _raw = streams["metadata_raw"]
+        _off = le32(_raw, 8)
+        if 8 <= _off <= len(_raw) - 8:
+            meta["max_size"] = le64(_raw, _off)
+            if _off + 16 <= len(_raw):
+                meta["allocation_delta"] = le64(_raw, _off + 8)
+            if _off + 24 <= len(_raw):
+                meta["journal_id"] = le64(_raw, _off + 16)
+            meta["max_resident"] = True
+            meta["max_params_offset"] = _off
     return meta
 
 
@@ -4043,7 +4959,7 @@ def walk_directory_tree(f, ps, cs, tr, obj_map, start_oid, max_depth, enrich, tr
     reparse_idx = {}
     if enrich and 0x540 in obj_map:
         try:
-            for _kd, _vd in walk_bplus(f, ps, cs, tr, obj_map[0x540]):
+            for _kd, _vd in walk_bplus(f, ps, cs, tr, obj_map[0x540], oid=0x540):
                 if len(_kd) >= 0x18 and le32(_kd, 0) == 0x80000001:
                     reparse_idx[(le64(_kd, 0x10), le64(_kd, 0x08))] = le32(_kd, 0x04)
         except Exception as _e:
@@ -4057,8 +4973,12 @@ def walk_directory_tree(f, ps, cs, tr, obj_map, start_oid, max_depth, enrich, tr
             return
 
         vlcns = obj_map[oid]
+        # B1/A9 (RC2): verify this object's ROOT page against the digest the Object Table recorded before
+        # listing anything out of it. Without this a flipped byte in a directory's root page was listed
+        # and extracted silently with rc 0 -- `--verify-pages` did not cover it, because that checks
+        # CHILD pages inside the tree and a root comes from the Object Table.
         try:
-            rows = walk_bplus(f, ps, cs, tr, vlcns)
+            rows = walk_bplus(f, ps, cs, tr, vlcns, oid=oid)
         except Exception as _e:
             _skip_note("walk_directory_tree", "a directory", _e)
             return
@@ -4216,6 +5136,11 @@ def walk_directory_tree(f, ps, cs, tr, obj_map, start_oid, max_depth, enrich, tr
             entry["is_encrypted"] = bool(fa & 0x4000)
             entry["is_compressed"] = bool(fa & 0x0800)
             entry["has_integrity"] = bool(fa & 0x8000)
+            # B2/K071: `integrity` needs each integrity file's VALUE record to verify its per-cluster
+            # CRC-32C, and only the walk has it. Captured OUT-OF-BAND and only when asked, so no entry
+            # dict gains a raw-bytes key (entries are json.dumps()'d verbatim by the export emitters).
+            if _CAPTURE_INTEGRITY_VD and entry["has_integrity"]:
+                _INTEGRITY_VD_CAPTURE.append((entry.get("path") or entry.get("name") or "?", vd))
             entry["has_ea"] = bool(fa & 0x00040000)
             entry["has_reparse"] = bool(fa & 0x0400)
             entry["is_deleted"] = entry["oid"] in trash_set if entry["oid"] else False
@@ -4333,7 +5258,7 @@ def walk_directory_tree(f, ps, cs, tr, obj_map, start_oid, max_depth, enrich, tr
             got = {}
             if oid and oid in obj_map:
                 try:
-                    _rows = walk_bplus(f, ps, cs, tr, obj_map[oid])
+                    _rows = walk_bplus(f, ps, cs, tr, obj_map[oid], oid=oid)
                 except Exception as _e:
                     _rows = ()
                     _skip_note("home-tree walk", "oid 0x%x" % oid, _e)
@@ -4461,6 +5386,28 @@ def walk_directory_tree(f, ps, cs, tr, obj_map, start_oid, max_depth, enrich, tr
     return results
 
 
+def _sum_file_bytes_once(results):
+    """Total file bytes, counting each FILE once rather than each NAME (K184 / audit).
+
+    A hard-linked file appears under every one of its names in the directory walk, so summing
+    `file_size` per row counted its bytes once per name: +11.4 GB on `winsider`, in a figure presented
+    as how much data the volume holds. Identity is the (home_oid, file_id) FileRef; a row without one is
+    counted on its own, which for a single-named file is the same answer.
+    """
+    seen = {}
+    extra = 0
+    for r in results:
+        if r.get("is_dir"):
+            continue
+        sz = r.get("file_size", 0) or 0
+        ref = (r.get("home_oid") or 0, r.get("file_id") or 0)
+        if ref == (0, 0):
+            extra += sz               # no identity: cannot be de-duplicated, so count it
+        else:
+            seen[ref] = sz            # same file under another name -> same size, counted once
+    return sum(seen.values()) + extra
+
+
 def fs_content_summary(f, ps, cs, tr, obj_map, plus=True, depth=DEFAULT_DEPTH):
     """Single source of truth for the file-system-content counts shown by `summary` in BOTH forefst and
     refsanalysis (refsanalysis calls this, it does NOT re-implement the walk). Walks the tree ONCE from
@@ -4473,7 +5420,12 @@ def fs_content_summary(f, ps, cs, tr, obj_map, plus=True, depth=DEFAULT_DEPTH):
         "directories": sum(1 for r in results if r["is_dir"]),
         "files": sum(1 for r in results if not r["is_dir"]),
         "resident_files": sum(1 for r in results if _data_residency(r) == DATA_INLINE),
-        "total_file_size_bytes": sum(r.get("file_size", 0) for r in results),
+        # K184 (audit): count each FILE once, not each NAME. A hard-linked file appears under every one
+        # of its names in this walk, so summing per row counted its bytes once per name -- +11.4 GB on
+        # `winsider`, where the figure is presented as how much data the volume holds. Identity is the
+        # (home_oid, file_id) FileRef; a row without one falls back to its own row identity, which for a
+        # file with a single name is the same thing.
+        "total_file_size_bytes": _sum_file_bytes_once(results),
     }
     counts["non_resident_files"] = counts["files"] - counts["resident_files"]   # D1: resident + non-resident = files
     times = [t for r in results for t in (r.get("create_time", 0), r.get("modify_time", 0)) if t and t > 0]
@@ -4499,16 +5451,24 @@ def fs_content_summary(f, ps, cs, tr, obj_map, plus=True, depth=DEFAULT_DEPTH):
 
 def _volume_times(f, ps, cs, tr, obj_map):
     """(vol_create, vol_modify) FILETIMEs from the volume-info object (OID 0x500,
-    key 0x0520, +0x90/+0xA0). Returns (0, 0) if unavailable. Used by --timestomp
-    for the PRE_FORMAT / FUTURE intrinsic signals."""
+    key 0x0520, +0x90/+0xA0). Returns (0, 0) if unavailable.
+
+    K190: this said "Used by --timestomp for the PRE_FORMAT / FUTURE intrinsic signals". It is not:
+    `cmd_timestomp` computes those from `_ts_vol_times`, and the only caller of THIS function is the
+    MLog branch of `timeline`, which uses `vol_create` to detect a redo timestamp that predates the
+    volume. A docstring naming a caller it does not have sends a reader to the wrong place to
+    understand a signal -- and the two functions read the same two fields, which is the duplication
+    gate 1g exists to notice."""
     if 0x500 not in obj_map:
         return (0, 0)
     try:
-        for kd, vd in walk_bplus(f, ps, cs, tr, obj_map[0x500]):
+        for kd, vd in walk_bplus(f, ps, cs, tr, obj_map[0x500], oid=0x500):
             if le16(kd, 0) == 0x0520 and len(vd) >= 0xA8:
                 return (le64(vd, 0x90), le64(vd, 0xA0))
-    except Exception:
-        pass
+    except Exception as _e:
+        # B4: (0, 0) feeds --timestomp's PRE_FORMAT / FUTURE signals, where it is read as a genuine
+        # volume timestamp. A failed read must not masquerade as one.
+        _skip_note("volume timestamps", "the volume-information object", _e)
     return (0, 0)
 
 # `annotate_timestomp` lived here. It computed a per-row tier for the `files` TimestompFlags column,
@@ -4847,6 +5807,19 @@ def _guid_str(b):
     if len(b) < 16: return b.hex()
     return f"{le32(b,0):08x}-{le16(b,4):04x}-{le16(b,6):04x}-{b[8:10].hex()}-{b[10:16].hex()}"
 
+def _page_bytes(cs):
+    """Bytes in ONE metadata page. 16 KiB on 4K-cluster volumes (4 clusters), 64 KiB on 64K-cluster
+    volumes (1 cluster) -- the page size is fixed, so the CLUSTER COUNT varies, not the byte size.
+
+    N52: `4 * cs` was hardcoded at three sites. That is the page on a 4K volume and FOUR pages on a 64K
+    one. Confirmed by the page header's own LCN tuple, which lists the clusters a page occupies:
+    4K -> [self, self+1, self+2, self+3]; 64K -> [self, 0, 0, 0]. The two CHKP SHA-256 rows in `summary`
+    were each wrong on a different geometry -- the primary hashed one CLUSTER (right on 64K, a quarter of
+    the page on 4K) and the secondary hashed `4 * cs` (right on 4K, four pages on 64K).
+    """
+    return max(16384, cs)
+
+
 def _hash_page(f, offset, size):
     f.seek(offset); return hashlib.sha256(f.read(size)).hexdigest()
 
@@ -4878,11 +5851,18 @@ def cmd_fastsummary(f, ps, cs, tr, roots, obj_map, vmaj, vmin, chkp_lcns,
     chk_type = le16(bs, 0x2A)
     vol_serial = le64(bs, 0x38)   # F11: volume serial number (VBR 0x38); boot shows it, triage summary didn't
     total_sectors = le64(bs, 0x18)
+    sector_size = _vbr_bytes_per_sector(bs)                  # A4
     bpc = le64(bs, 0x40) if le64(bs, 0x40) != 0 else 0x4000000
     vbr_sha = hashlib.sha256(bs).hexdigest()
 
     # SUPB + hash
-    supb_off = ps + SUPB_LCN * cs
+    # A5/K033: this is a SECOND, independent read of the superblock -- `bootstrap` already fell back to a
+    # backup copy if the primary was destroyed, but this site did not, so a volume recovered from a backup
+    # printed `Volume GUID: 00000000-0000-...` as though that WERE the volume's GUID. A zeroed field
+    # rendered as a value is precisely the wrong-but-stable class of defect; read the copy that was
+    # actually used.
+    supb_lcn = _SUPB_FELL_BACK.get("used_lcn", SUPB_LCN)
+    supb_off = ps + supb_lcn * cs
     f.seek(supb_off); supb_data = f.read(cs)
     vol_guid = supb_data[0x50:0x60] if supb_data[:4] == b"SUPB" else b"\x00" * 16
     supb_sha = hashlib.sha256(supb_data).hexdigest()
@@ -4894,26 +5874,37 @@ def cmd_fastsummary(f, ps, cs, tr, roots, obj_map, vmaj, vmin, chkp_lcns,
             vc, flags, _ = parse_chkp(f, ps, cs, cl)
             if vc >= best_vc:
                 best_vc = vc; best_flags = flags
-                chkp_sha = _hash_page(f, ps + cl * cs, cs)
+                chkp_sha = _hash_page(f, ps + cl * cs, _page_bytes(cs))   # N52: the PAGE, not one cluster
         except Exception as _e: _skip_note("fastsummary: checkpoint", f"lcn {cl}", _e)
 
     # Root table row counts
     root_counts = {}
+    root_unreadable = set()      # B3/K044: roots whose count is NOT evidence
     # E3 fix: the real-addressed roots are {7,8,12} (module-level _CT_ROOT_INDICES) — NOT {7,8,10,11}.
     # The old local set read roots 10/11 without translation and root 12 WITH translation, i.e. 3 of
     # 13 root counts from wrong locations. (chkp.md / container_table.md / FS_CHKP_016/017/021, RD.)
     for idx in range(min(13, len(roots))):
         vlcns = roots[idx]
-        if not vlcns: root_counts[idx] = 0; continue
+        if not vlcns: root_counts[idx] = 0; continue          # genuinely no root: 0 is the truth
         use_tr = None if idx in _CT_ROOT_INDICES else tr
-        try: root_counts[idx] = len(list(walk_bplus(f, ps, cs, use_tr, vlcns)))
-        except Exception: root_counts[idx] = 0
+        # B3/K044: a root whose walk RAISES, or whose pages could not be read, is not a root with
+        # 0 rows. Substituting 0 printed "Schema Table 0 rows" for an unreadable table. The count is
+        # now None ("unreadable") and the failure is recorded, so no fabricated census is reported.
+        _dmg_before = len(_WALK_DAMAGE)
+        try:
+            root_counts[idx] = len(list(walk_bplus(f, ps, cs, use_tr, vlcns)))
+            if len(_WALK_DAMAGE) > _dmg_before:
+                root_unreadable.add(idx)
+        except Exception as _e:
+            root_counts[idx] = None
+            root_unreadable.add(idx)
+            _skip_note("fastsummary: root table", "index %d" % idx, _e)
 
     # Volume metadata from OID 0x500
     vol_label = ""; vol_detail = {}
     if 0x500 in obj_map:
         try:
-            for kd, vd in walk_bplus(f, ps, cs, tr, obj_map[0x500]):
+            for kd, vd in walk_bplus(f, ps, cs, tr, obj_map[0x500], oid=0x500):
                 kt = le16(kd, 0) if len(kd) >= 2 else 0
                 if kt == 0x0510 and len(vd) >= 2:
                     vol_label = vd.decode("utf-16-le", errors="replace").rstrip("\x00")
@@ -4927,7 +5918,7 @@ def cmd_fastsummary(f, ps, cs, tr, roots, obj_map, vmaj, vmin, chkp_lcns,
         except Exception as _e: _skip_note("fastsummary: volume info", "table 0x520", _e)
 
     checksum_types = {0: "None", 2: "CRC64", 4: "SHA-256"}
-    volume_bytes = total_sectors * 512
+    volume_bytes = total_sectors * sector_size               # A4: sector units, not 512-byte LBAs
 
     summary = {
         "tool": PROG, "summary_mode": "fastsummary-plus" if plus_mode else "fastsummary",
@@ -4941,14 +5932,20 @@ def cmd_fastsummary(f, ps, cs, tr, roots, obj_map, vmaj, vmin, chkp_lcns,
         "cluster_size": cs, "container_size": bpc,
         "checksum": checksum_types.get(chk_type, f"Unknown({chk_type})"),
         "checkpoint_vc": best_vc, "checkpoint_flags": f"0x{best_flags:x}",
+        # N9: the printed byte offsets are absolute in the IMAGE FILE, so the reader needs the
+        # partition start to check one; it is published rather than left implicit.
+        "partition_start": ps,
         "containers_mapped": root_counts.get(7, 0),
         "objects": len(obj_map),
         "vbr_sha256": vbr_sha, "supb_sha256": supb_sha, "chkp_sha256": chkp_sha,
         # Bootstrap redundancy inventory (VBR primary+backup, checkpoint pair, SUPB copies) with addresses +
         # validity — the same scan `integrity` uses, surfaced so `summary` shows where the backups are.
         "bootstrap_backups": _scan_backup_copies(f, ps, cs, chkp_lcns),
+        # B3/K044: null means "could not be read", NOT zero rows; the companion list names them.
         "root_table_rows": {_ROOT_LABELS[i]: root_counts.get(i, 0)
                             for i in range(min(13, len(roots)))},
+        "root_tables_unreadable": sorted(_ROOT_LABELS[i] for i in root_unreadable
+                                         if i < len(_ROOT_LABELS)),
     }
 
     # GN_PREF_RA_004 lives in `integrity`, NOT here. Verifying every Object-Table page reference means one
@@ -5001,7 +5998,34 @@ def cmd_fastsummary(f, ps, cs, tr, roots, obj_map, vmaj, vmin, chkp_lcns,
                 # reported "formatted v3.14" while the volume is provably v3.9 (its pre-upgrade image
                 # win1122h2test), contradicting the evidence line printed directly beneath it.
                 from_ver = from_ver or "v3.%d" % min(vol_mn, drv_mn)
-        if reasons:
+        # K051: `volume_state` was built from the BOOT SECTOR's version alone and never compared with any
+        # other source, so a hand-edited VBR was echoed back as fact -- an image whose boot sector says
+        # 6.66 reported `NATIVE v6.66`, a version that does not exist, while the checkpoint, the
+        # $VOLUME_INFORMATION stamp and the backup VBR all still said 3.14. The boot sector is the one
+        # structure an examiner can trivially rewrite, so it is exactly the one that needs corroborating.
+        #
+        # Two independent tests, both measured over the corpus before being written:
+        #   * PLAUSIBILITY. 114 of 117 readable images declare 3.4/3.7/3.9/3.10/3.14 -- every ReFS volume
+        #     format observed is 3.x with minor <= 14. The only three outside that are hand-edited (6.66
+        #     twice, and the single 3.15 image, which E96 established is an edited 3.14: 3.15 exists as a
+        #     DRIVER stamp and has never been a volume format).
+        #   * CORROBORATION. $VOLUME_INFORMATION carries its own minor. When the VBR's minor and that
+        #     stamp disagree on a volume with NO upgrade evidence, one of the two was rewritten.
+        _vcontra = []
+        if vmaj != 3:
+            _vcontra.append("the boot sector declares v%d.%d, and no ReFS volume format outside 3.x "
+                            "exists" % (vmaj, vmin))
+        elif vmin > 14:
+            _vcontra.append("the boot sector declares v3.%d; no ReFS volume FORMAT above 3.14 has been "
+                            "observed (3.15 appears only as a driver stamp, never on a volume)" % vmin)
+        if isinstance(vol_mn, int) and vol_mn != vmin and not reasons:
+            _vcontra.append("$VOLUME_INFORMATION says v3.%d but the boot sector says v3.%d, and there is "
+                            "no upgrade evidence to explain the difference" % (vol_mn, vmin))
+        if _vcontra:
+            summary["volume_state"] = "VERSION CONTRADICTED - the boot sector is not corroborated"
+            summary["version_contradiction"] = _vcontra
+            _VERSION_CONTRADICTED.extend(_vcontra)
+        elif reasons:
             summary["volume_state"] = "UPGRADED"
             summary["upgrade_evidence"] = reasons
             summary["upgraded_from"] = from_ver or "an earlier version"
@@ -5013,27 +6037,27 @@ def cmd_fastsummary(f, ps, cs, tr, roots, obj_map, vmaj, vmin, chkp_lcns,
         # Security descriptor count
         sec_count = 0
         if 0x530 in obj_map:
-            try: sec_count = len(list(walk_bplus(f, ps, cs, tr, obj_map[0x530])))
+            try: sec_count = len(list(walk_bplus(f, ps, cs, tr, obj_map[0x530], oid=0x530)))
             except Exception as _e: _skip_note("fastsummary: security descriptors", "table 0x530", _e)
         summary["security_descriptors"] = sec_count
 
         # Reparse index
         reparse_count = 0
         if 0x540 in obj_map:
-            try: reparse_count = len(list(walk_bplus(f, ps, cs, tr, obj_map[0x540])))
+            try: reparse_count = len(list(walk_bplus(f, ps, cs, tr, obj_map[0x540], oid=0x540)))
             except Exception as _e: _skip_note("fastsummary: reparse index", "table 0x540", _e)
         summary["reparse_index_entries"] = reparse_count
 
         # Trash table
         trash_count = 0
         if 0xD in obj_map:
-            try: trash_count = len(list(walk_bplus(f, ps, cs, tr, obj_map[0xD])))
+            try: trash_count = len(list(walk_bplus(f, ps, cs, tr, obj_map[0xD], oid=0xD)))
             except Exception as _e: _skip_note("fastsummary: trash table", "table 0xD", _e)
         summary["trash_table_entries"] = trash_count
 
         # Container utilization
         ct_size = root_counts.get(7, 0)
-        if tr and ct_size > 0:
+        if tr and ct_size and ct_size > 0:        # B3/K044: None = unreadable -> no utilisation figure
             used = sum(1 for c in tr.map.values() if c > 0)
             summary["containers_used"] = used
             summary["containers_free"] = ct_size - used
@@ -5063,7 +6087,7 @@ def cmd_fastsummary(f, ps, cs, tr, roots, obj_map, vmaj, vmin, chkp_lcns,
         fs_meta = {"rows": 0, "children": [], "usn_journal": False}
         if 0x520 in obj_map:
             try:
-                for kd, vd in walk_bplus(f, ps, cs, tr, obj_map[0x520]):
+                for kd, vd in walk_bplus(f, ps, cs, tr, obj_map[0x520], oid=0x520):
                     fs_meta["rows"] += 1
                     if len(kd) >= 4 and le16(kd, 0) == 0x30:
                         try: name = kd[4:].decode("utf-16-le").rstrip("\x00")
@@ -5104,12 +6128,22 @@ def _print_fastsummary(summary, plus_mode=False, is_summary=False):
     print()
     print("-" * w)
     print("Bootstrap structures")
+    if (summary.get("partition_start") or 0):
+        print(f"  (offsets below are ABSOLUTE in the image file; partition starts at "
+              f"{summary['partition_start']:#x})")
     print("-" * w)
     # Every redundant copy (VBR primary+backup, both checkpoints, primary+backup SUPB) with its address,
     # validity/identical check, AND its own SHA-256 — so all six-plus hashes are shown (1summary-2a) and no
     # line exceeds the report width (1summary-1: the 64-hex hash sits on its own indented line).
     bk = summary.get("bootstrap_backups") or {}
     _cs = summary.get("cluster_size", 0) or 0
+    # N9: "offset" meant two different things. The lines below printed LCN x cluster_size -- an offset
+    # relative to the PARTITION -- while this tool's own error messages, and the VBR backup line, print
+    # the offset in the IMAGE FILE. An analyst taking a partition-relative number to a hex editor lands
+    # short by exactly the partition start and reads zeros. (It is not a hypothetical: it happened while
+    # adding a witness to the claim register for FS_SUPB_007.) Every offset here is now the absolute file
+    # offset, the same thing the errors print, and the header says so.
+    _ps = summary.get("partition_start", 0) or 0
     def _bs(label, addr, status, sha):
         print(f"  {label:<16} {addr}" + (f"  — {status}" if status else ""))
         if sha:
@@ -5127,18 +6161,18 @@ def _print_fastsummary(summary, plus_mode=False, is_summary=False):
     def _supb_line(s):
         _sha = summary.get("supb_sha256") if s.get("role") == "PRIMARY" else s.get("sha256")
         _st = "checksum OK" if s.get("cksum_ok") else ("signature OK" if s.get("ok") else "BAD")
-        _bs(f"SUPB {s.get('role','?').lower()}", f"LCN {s.get('lcn',0):#x} (offset {s.get('lcn',0)*_cs:#x})",
+        _bs(f"SUPB {s.get('role','?').lower()}", f"LCN {s.get('lcn',0):#x} (offset {_ps + s.get('lcn',0)*_cs:#x})",
             _st + _self_ref_flag(s), _sha)
     def _chkp_line(rec):
         _sha = summary.get("chkp_sha256") if rec.get("role") == "PRIMARY" else rec.get("sha256")
         _cok = "checksum OK" if rec.get("cksum_ok") else ("signature OK" if rec.get("sig_ok") else "BAD")
         _st = _cok + (f", vclock={rec['vc']}" if rec.get("vc") is not None else "") \
               + ("" if rec.get("roots_ok") else " (roots unreadable)") + _self_ref_flag(rec)
-        _bs(f"CHKP {rec.get('role','?').lower()}", f"LCN {rec['lcn']:#x} (offset {rec['lcn']*_cs:#x})", _st, _sha)
+        _bs(f"CHKP {rec.get('role','?').lower()}", f"LCN {rec['lcn']:#x} (offset {_ps + rec['lcn']*_cs:#x})", _st, _sha)
 
     # 2summary: primary copies first, then a separator, then the backup copies (grouped by role, not by
     # structure type). VBR primary is always at LBA 0.
-    _bs("VBR primary", "LBA 0 (offset 0x0)",
+    _bs("VBR primary", f"LBA 0 (offset {_ps:#x})",   # N9: the VBR sits AT the partition start
         "checksum OK" if v.get("primary_cksum_ok") else ("sig OK" if v.get("primary_ok") else "BAD"),
         summary.get("vbr_sha256"))
     for s in _supb:
@@ -5148,7 +6182,7 @@ def _print_fastsummary(summary, plus_mode=False, is_summary=False):
     print("-" * w)
     vb = v.get("backup")
     if vb and vb.get("present"):
-        _bs("VBR backup", f"LBA {vb['lba']} (off {vb['lba']*512:#x})",
+        _bs("VBR backup", f"LBA {vb['lba']} (off {vb.get('byte_offset', 0):#x})",
             ("= primary" if vb.get("matches_primary") else "DIFFERS")
             + (", checksum OK" if vb.get("cksum_ok") else ""), vb.get("sha256"))
     elif vb is not None:
@@ -5194,8 +6228,14 @@ def _print_fastsummary(summary, plus_mode=False, is_summary=False):
     print("-" * w)
     print("Global Root Tables")
     print("-" * w)
+    _unread = set(summary.get("root_tables_unreadable") or [])
     for name, count in summary["root_table_rows"].items():
-        print(f"  {name:<28} {count:>6} rows")
+        if count is None or name in _unread:
+            # B3/K044: this table's pages could not be read. Printing "0 rows" here reported a
+            # destroyed table as an empty one.
+            print(f"  {name:<28} {'unreadable':>10}  (pages could not be read — NOT an empty table)")
+        else:
+            print(f"  {name:<28} {count:>6} rows")
 
     if plus_mode:
         print()
@@ -5790,16 +6830,54 @@ def bootstrap(image_path, partition_start=None):
 
         chkp_lcns = parse_supb(f, ps, cs)
 
-        # Get newest checkpoint
-        best_vc = 0; best_roots = None
+        # Get the checkpoint the DRIVER would use -- and verify it before trusting its roots.
+        #
+        # A1/K035/K037 (E101). This selection had two independent defects, both invisible on a healthy
+        # volume and both serious on a damaged one:
+        #   1. it ranked copies by the PAGE-HEADER clock at +0x10, but the driver's
+        #      ChooseCheckpointRecord<0> compares the clock at +0x60. The two are equal on all 16 corpus
+        #      copies, so this was a tamper-detection gap rather than a live mis-selection -- a tamper
+        #      that moves one and not the other is precisely what an examiner needs to see.
+        #   2. it verified NO checksum, so a checkpoint whose page was corrupted but still carried the
+        #      newest clock was parsed and its roots trusted -- the whole volume view then hangs off a
+        #      structure known to be damaged.
+        # Rank on +0x60, prefer copies that pass their own self-checksum, and if that means using an
+        # OLDER checkpoint say so loudly: the view built from it is stale by construction.
+        _cands = []
         for cl in chkp_lcns:
             try:
+                f.seek(ps + cl * cs); _raw = f.read(_page_bytes(cs))   # N52
                 vc, flags, roots = parse_chkp(f, ps, cs, cl)
-                if vc >= best_vc:
-                    best_vc = vc; best_roots = roots
+                _ck_ok, _ckname = _verify_self_checksum(_raw, cs)
+                _cands.append({"lcn": cl, "roots": roots,
+                               "vc": le64(_raw, 0x60) if len(_raw) >= 0x68 else vc,  # K037: driver's clock
+                               "vc_page": vc,                                        # +0x10; divergence = tamper
+                               "cksum_ok": _ck_ok, "ckname": _ckname})
             except Exception as _e:
                 _skip_note("bootstrap", "a bootstrap structure", _e)
                 continue
+        _usable = [c for c in _cands if c["roots"]]
+        # `cksum_ok is None` means "no algorithm we can check", NOT "failed" -- do not discard those.
+        _valid = [c for c in _usable if c["cksum_ok"] is not False]
+        _pool = _valid or _usable
+        # highest +0x60, ties broken by lowest LCN (deterministic, matches the inventory)
+        _chosen = max(_pool, key=lambda c: (c["vc"], -c["lcn"])) if _pool else None
+        _newest = max(_usable, key=lambda c: (c["vc"], -c["lcn"])) if _usable else None
+        best_roots = _chosen["roots"] if _chosen else None
+        if _chosen is not None and _newest is not None and _chosen["lcn"] != _newest["lcn"]:
+            _CHKP_STALE.append(
+                "the newest checkpoint (LCN 0x%x, vclock %s) failed its self-checksum (%s); the volume was "
+                "read from an OLDER checkpoint (LCN 0x%x, vclock %s), so this view is STALE -- changes "
+                "committed after that older checkpoint are not reflected"
+                % (_newest["lcn"], _newest["vc"], _newest.get("ckname") or "?",
+                   _chosen["lcn"], _chosen["vc"]))
+            print("[%s] WARNING: %s" % (PROG, _CHKP_STALE[-1]), file=sys.stderr)
+        for _c in _cands:
+            if _c["vc_page"] != _c["vc"]:
+                _CHKP_STALE.append(
+                    "checkpoint @ 0x%x clock mismatch: page header +0x10=%s vs selection clock +0x60=%s "
+                    "(the driver compares +0x60; a divergence does not occur normally -- treat as tampering)"
+                    % (_c["lcn"], _c["vc_page"], _c["vc"]))
         if not best_roots:
             raise ValueError(
                 "no valid checkpoint could be parsed from the superblock's checkpoint list — the bootstrap "
@@ -6500,10 +7578,13 @@ def cmd_mlog(image, remaining, partition_start):
             txn_starts = sum(1 for r in records if r["txn_start"])
             txn_commits = sum(1 for r in records if r["txn_commit"])
             print("  Transaction starts: %d" % txn_starts)
-            print("  Transaction commits: %d  (commit is marked at the checkpoint/LogCore layer, not by a"
-                  % txn_commits)
-            print("                          per-redo-record flag — this is 0 on every volume, healthy or not;")
-            print("                          do NOT read starts>commits as 'uncommitted work')")
+            # A2: the note that used to sit here said commit "is marked at the checkpoint/LogCore layer,
+            # not by a per-redo-record flag -- this is 0 on every volume, healthy or not". Every clause was
+            # false, and it was written to explain a zero the tool produced itself: under the wrong record
+            # budget each block was truncated before its final record, which is the one that carries the
+            # flag. Measured under the driver's budget: the last record of 75,695 of 75,695 blocks on
+            # lab314_main_step3_dirty is commit-flagged (362 of 364 on win11refsmini).
+            print("  Transaction commits: %d" % txn_commits)
             print()
             print("  The MLog is the volume's DURABLE TRANSACTION LOG. Operations logged here may not yet be")
             print("  checkpointed into the committed on-disk tree, so `files`/`summary` (which read the committed")
@@ -6574,6 +7655,12 @@ def cmd_mlog(image, remaining, partition_start):
                 print()
                 print("  Records checked:    %d" % iv["checked"])
                 print("  Verified:           %d" % iv["verified"])
+                if iv["failed"]:
+                    # B1 class (RC2), found by check_finding_reachability: this count was printed with
+                    # "torn or altered" beside it and read nowhere, so a volume with altered MLog pages
+                    # still exited 0. A page that fails its own verification is a finding.
+                    _finding("mlog page verification",
+                             "%d MLog page(s) failed verification — torn or altered" % iv["failed"])
                 print("  Failed:             %d%s" % (iv["failed"],
                                                       "" if not iv["failed"] else "   <-- torn or altered"))
                 for blk, st, co in iv["failures"]:
@@ -6660,7 +7747,15 @@ def cmd_usn(image, remaining, partition_start):
         W = 78
         vd, entry_meta = locate_change_journal(f, ps, cs, tr, obj_map)
         if vd is None:
+            # B4/K047: only claim "not activated" when the directory was actually READ and held no
+            # journal. If the walk failed or was incomplete, say so -- a destroyed directory page
+            # otherwise produced the confident (and false) claim that the volume never enabled it.
+            _unread = _journal_lookup_was_incomplete()
             print("No Change Journal found in %s" % os.path.basename(image))
+            if _unread:
+                print("  (OID 0x520 present, but the FS-metadata directory could NOT be fully read — "
+                      "this is NOT evidence the journal was never activated; see the warning below)")
+                return 2
             print("  (OID 0x520 %s — journal not activated)" % (
                 "present" if OID_FS_METADATA in obj_map else "absent"))
             return 0
@@ -6737,12 +7832,41 @@ def cmd_usn(image, remaining, partition_start):
                 total_cl = sum(e["clusters"] for e in streams["j_extents"])
                 print("    Allocated size: %s bytes (%d clusters) — the journal's rolling window, read in full" %
                       ("{:,}".format(total_cl * cs), total_cl))
+                # B5/K070: the stream's own declared lengths, which nothing used to read. Measured on
+                # all 21 corpus journals, all four equal the extents' allocated size -- so a disagreement
+                # is evidence (a truncated or edited declaration), not a variation.
+                _dec = streams.get("j_declared")
+                if _dec:
+                    print("    Declared:       alloc=%s size=%s VDL=%s disk=%s" % (
+                        "{:,}".format(_dec["alloc"]), "{:,}".format(_dec["size"]),
+                        "{:,}".format(_dec["vdl"]), "{:,}".format(_dec["disk_alloc"])))
+                    _bad = [n for n, _o in _USN_LEN_FIELDS if _dec[n] != total_cl * cs]
+                    if _bad:
+                        print("    *** MISMATCH: %s disagree with the %s bytes the extents allocate."
+                              % (", ".join(_bad), "{:,}".format(total_cl * cs)))
+                        print("        On every healthy corpus volume all four equal the allocated size;")
+                        print("        a disagreement means the declaration was truncated or edited.")
+                        _skip_note("USN journal",
+                                   "the $J declared length(s) %s disagree with the allocated size "
+                                   "(declared size=%d vs allocated=%d)" % (
+                                       "/".join(_bad), _dec["size"], total_cl * cs),
+                                   ValueError("declared $J length mismatch"))
+                else:
+                    print("    Declared:       not found (the length row was not present or not readable)")
                 for i, ext in enumerate(streams["j_extents"]):
                     print("    [%d] VLCN=0x%x PLCN=0x%x vcn=%d len=%d" % (
                         i, ext["vlcn"], ext["plcn"], ext["file_vcn"], ext["clusters"]))
             print()
             print("  $Max stream (parameters):")
-            print("    Extents:        %d" % len(streams.get("max_extents", [])))
+            # B5/K071: $Max is ~40 bytes and is stored RESIDENT, so "Extents: 0" is the normal case and
+            # not an absence -- saying only that used to imply the parameters were unavailable.
+            if streams.get("max_extents"):
+                print("    Extents:        %d" % len(streams["max_extents"]))
+            elif journal_meta.get("max_resident"):
+                print("    Extents:        0 — resident (the parameters are inline, at +0x%x of the "
+                      "sub-record)" % journal_meta.get("max_params_offset", 0))
+            else:
+                print("    Extents:        0")
             if journal_meta.get("max_size") is not None:
                 print("    Max journal:    %s bytes (%.1f MB)" % (
                     "{:,}".format(journal_meta["max_size"]),
@@ -6760,6 +7884,9 @@ def cmd_usn(image, remaining, partition_start):
                 usn_min = min(r.usn for r in records)
                 usn_max = max(r.usn for r in records)
                 print("    USN range:      %d — %d" % (usn_min, usn_max))
+                # B3/K069: a zeroed journal tail is indistinguishable from unwritten ring space in the
+                # stream itself; the per-file LastUsn pointers are the witness that outlives the wipe.
+                _usn_report_destroyed_tail(f, ps, cs, tr, obj_map, records)
             print()
             print("  USN_RECORD_V3 layout:")
             print("    Offset  Size  Field")
@@ -6947,10 +8074,16 @@ def cmd_timeline(image, remaining, partition_start):
             streams = parse_usn_journal_streams(vd, cs, tr)
             if streams["j_extents"]:
                 j_data = read_usn_j_stream(f, ps, cs, streams["j_extents"], streams["j_stream_size"])
-                for r in parse_usn_records(j_data):
+                _usn_recs = parse_usn_records(j_data)
+                for r in _usn_recs:
                     nm = getattr(r, "filename", "") or oid_paths.get(r.file_oid, "")
                     events.append((r.timestamp, "USN", r.file_oid, nm,
                                    usn_reason_to_short(r.reason))); counts["USN"] += 1
+                # B3/K069: a timeline built on a journal whose tail was destroyed is missing events, and
+                # nothing in the stream says so -- the per-file LastUsn pointers do. Say it on the
+                # timeline itself, not only in `usn --info`, because this is the command whose OUTPUT the
+                # missing records would silently shorten.
+                _usn_report_destroyed_tail(f, ps, cs, tr, obj_map, _usn_recs, indent="  ")
 
         # (3) MLog — per-transaction events that carry an embedded timestamp
         redo_ops = _redo_ops_for_version(vmin)
@@ -7012,7 +8145,15 @@ def cmd_timeline(image, remaining, partition_start):
             print("  NOTE: the $SI MACB walk visits every file — slow on large volumes. Use --fast")
             print("        (USN + MLog change-journals only) for a quick pass.")
         if counts["USN"] == 0:
-            print("  NOTE: USN journal inactive on this image — timeline is $SI + MLog only.")
+            # B5/K069: "inactive" is a claim about how the volume was configured. It must not be made
+            # over a journal the tool could not read, or one that is allocated but entirely zero --
+            # those are unexplained absences, not evidence of a disabled journal.
+            if _journal_unreadable_or_wiped():
+                print("  NOTE: no USN events — the journal could NOT be read, or is allocated and")
+                print("        entirely empty. This is NOT evidence the journal was inactive; see the")
+                print("        warning on stderr. Timeline below is $SI + MLog only.")
+            else:
+                print("  NOTE: USN journal inactive on this image — timeline is $SI + MLog only.")
         print("  Caveat: USN and $SI carry exact FILETIMEs. MLog has NO wall-clock time — an MLog row's time is")
         print("          the affected object's embedded $SI birth (approximate; for a RENAME/MOVE it is the object")
         print("          birth, not the op time). MLog times that predate the volume are undated + marked.")
@@ -7160,7 +8301,7 @@ def _parse_security_descriptor(sd_data):
 def _parse_sd_stream(f, ps, cs, tr, obj_map):
     if 0x530 not in obj_map:
         return [], "OID 0x530 (Security Descriptor Stream) not found in Object Table"
-    rows = walk_bplus(f, ps, cs, tr, obj_map[0x530])
+    rows = walk_bplus(f, ps, cs, tr, obj_map[0x530], oid=0x530)
     descriptors = []
     for kd, vd in rows:
         if len(kd) >= 16:
@@ -7275,10 +8416,16 @@ def _stream_extent_records(vd, ctx=None):
             vlcn, fvcn, run = le64(v, b), le32(v, b + 0x0C), le32(v, b + 0x14)
             if run == 0 or run > 0x1000000:
                 continue
+            if _extent_is_hole(le32(v, b + 8), vlcn):
+                vlcn = 0                              # A1: hole -> VLCN 0 (an ADS can be sparse too)
             exts.append((fvcn, vlcn, run))
         if exts:
             recs[le64(v, 0x38)] = sorted(exts)     # keyed by stream_size
     return recs
+
+# K003: the ceiling this reader refuses above. It buffers a whole stream in memory, so it needs a bound;
+# what it must never do is apply one SILENTLY.
+_VLCN_READ_MAX = 512 * 1024 * 1024
 
 def _read_vlcn_extents(f, ps_off, cs, tr, exts, size, _content_what=None):
     """Reassemble a stream from its (file_vcn, vlcn, run_length) extent list (24-byte type-0x40 format):
@@ -7286,21 +8433,45 @@ def _read_vlcn_extents(f, ps_off, cs, tr, exts, size, _content_what=None):
     snapshot/CoW read path. Bytes may be stale for a recovered/deleted stream (no freshness check)."""
     if not exts:
         return b""
-    alloc = min(max(fv + run for fv, _vl, run in exts) * cs, 512 * 1024 * 1024)
-    buf = bytearray(alloc)
+    # K003 (wrong bytes), two defects that lived in this one reader:
+    #
+    # 1. The allocation was silently capped at 512 MiB, so a larger stream came back SHORT with no
+    #    warning and no error -- a truncated file that looks complete. The cap itself is worth keeping
+    #    (this reader buffers the whole stream in memory), but it must REFUSE, not truncate: a caller
+    #    that asked for the bytes has to learn it did not get them.
+    # 2. VLCN 0 was translated and read like any other run, so a run at VLCN 0 returned volume cluster
+    #    0 -- the BOOT SECTOR -- as the file's content. VLCN 0 is a read-time floor, not data (E98):
+    #    a hole is `flags & 0x20`, but this low-level reader is handed bare (fvcn, vlcn, run) tuples
+    #    with no flags at all, so the floor is the only defence it has. Leave those clusters as zeros.
+    _needed = max(fv + run for fv, _vl, run in exts) * cs
+    if _needed > _VLCN_READ_MAX:
+        raise ValueError(
+            "stream needs %d bytes (%.1f MiB) but this reader buffers whole streams and is bounded at "
+            "%d bytes (%.0f MiB): refusing rather than returning a silently truncated file"
+            % (_needed, _needed / 1048576.0, _VLCN_READ_MAX, _VLCN_READ_MAX / 1048576.0))
+    buf = bytearray(_needed)
     _runs = []
+    _floored = 0
     for fvcn, vlcn, run in sorted(exts):
         for j in range(run):
+            off = (fvcn + j) * cs
+            if off + cs > len(buf):
+                break
+            if not (vlcn + j):
+                _floored += 1          # VLCN 0: read-time floor -- leave the zeros already in `buf`
+                continue
             try:
                 plcn = tr.tr(vlcn + j)
             except Exception:
                 plcn = vlcn + j
-            off = (fvcn + j) * cs
-            if off + cs > len(buf):
-                break
             _runs.append((plcn, 1, off))
             f.seek(ps_off + plcn * cs)
-            buf[off:off + cs] = f.read(cs)
+            _c = f.read(cs)
+            buf[off:off + len(_c)] = _c            # K007: length-safe -- a short read must not RESIZE buf
+    if _floored:
+        _skip_note("stream read", "%d cluster(s) at VLCN 0 were not read (read-time floor): they are "
+                                  "zeros in the output, NOT bytes from the volume" % _floored,
+                   ValueError("VLCN 0 read-time floor"), expected=True)
     if _content_what:
         # An extent-backed ADS is output too (`export ads`), and this reader had no hole check at all.
         content_holes(f, ps_off, cs, _runs, _content_what, stream_size=size)
@@ -7388,8 +8559,15 @@ def _parse_ads_from_value(vd, ctx=None):
         ads.append(entry)
     return ads
 
-def _find_extents_in_subrecord(vd, rec_off, rec_size, needed, tr, cs, result):
-    """Search a sub-record for extent table entries."""
+def _find_extents_in_subrecord(vd, rec_off, rec_size, needed, tr, cs, result, allow_marker_scan=True):
+    """Search a sub-record for extent table entries.
+
+    `allow_marker_scan=False` withholds the trailing heuristic (the 4-byte `_DATA_ATTR_MARKER` match).
+    That reading is the only one of the three a COINCIDENCE can satisfy, and it answers with a single
+    whole-file run at file_vcn 0 -- a shape that contradicts sparseness by construction. A1's sparse
+    fallback therefore declines it: letting it answer there produced 6 maps on win11refs8gtestmove all
+    pointing at VLCN 0xe0080, which is the $DATA descriptor constant 0x000E0080 read as an address --
+    one of the exact wrong decodes M2.2 lists in _decode_holder_extents."""
     rec_end = rec_off + rec_size
     for scan_off in range(rec_off + 4, rec_end - 24, 4):
         start = le32(vd, scan_off)
@@ -7416,19 +8594,24 @@ def _find_extents_in_subrecord(vd, rec_off, rec_size, needed, tr, cs, result):
             file_vcn = le32(vd, eoff + 12)
             run_len = le32(vd, eoff + 20)
             full_vlcn = vlcn | (vlcn_hi << 32)
-            if run_len > 0 and full_vlcn > 0:
+            # A1: a hole row belongs in the candidate set. `full_vlcn > 0` alone dropped the vlcn-0 form
+            # (so the cluster total never reached `needed` and the whole file was rejected) and admitted
+            # the flagged form as real data. The flag is what decides; the `> 0` guard stays for
+            # everything else, because this loop is a scan and an all-zero row is not an extent.
+            _hole = _extent_is_hole(flags, full_vlcn)
+            if run_len > 0 and (full_vlcn > 0 or (flags & EXT_FLAG_SPARSE_HOLE)):
                 # NOTE: no tr.tr() here. Translating a candidate that is then REJECTED counted a
                 # container-table miss, and that counter is surfaced to the analyst as "output may be
                 # incomplete (corrupt/truncated container table)" — a false alarm on healthy volumes
                 # (measured: 794 of 794 misses on three corpus images were rejected candidates).
                 candidate_extents.append({
                     "vlcn": full_vlcn, "plcn": 0, "file_vcn": file_vcn,
-                    "clusters": run_len, "flags": flags, "disk_offset": 0,
+                    "clusters": run_len, "flags": flags, "disk_offset": 0, "is_hole": _hole,
                 })
                 total_clusters += run_len
         if total_clusters == needed and candidate_extents:
             for _e in candidate_extents:                 # resolve only an ACCEPTED set
-                _e["plcn"] = tr.tr(_e["vlcn"])
+                _e["plcn"] = 0 if _e.get("is_hole") else tr.tr(_e["vlcn"])      # A1: holes are not addresses
             result["extents"] = candidate_extents
             return
 
@@ -7444,21 +8627,28 @@ def _find_extents_in_subrecord(vd, rec_off, rec_size, needed, tr, cs, result):
             file_vcn = le32(vd, eoff + 12)
             run_len = le32(vd, eoff + 20)
             full_vlcn = vlcn | (vlcn_hi << 32)
-            if run_len > 0 and full_vlcn > 0:
+            _hole = _extent_is_hole(flags, full_vlcn)                                    # A1
+            if run_len > 0 and (full_vlcn > 0 or (flags & EXT_FLAG_SPARSE_HOLE)):
                 candidate_extents.append({                 # translation deferred — see the first loop
                     "vlcn": full_vlcn, "plcn": 0, "file_vcn": file_vcn,
-                    "clusters": run_len, "flags": flags, "disk_offset": 0,
-                    "integrity_checksum": flags == 0x1c00d0,
+                    "clusters": run_len, "flags": flags, "disk_offset": 0, "is_hole": _hole,
+                    # A3: the row carries one CRC-32C per cluster iff its declared size says so; the old
+                    # `flags == 0x1c00d0` test folded "row_size == 28" into the comparison and so was true
+                    # only for run == 1 -- and the 32-byte stride that followed it walked into the middle
+                    # of any longer CRC array.
+                    "integrity_checksum": bool(_extent_row_crcs(vd, eoff, run_len)[0]),
                 })
                 total_clusters += run_len
-            eoff += 32 if flags == 0x1c00d0 else 24
+            eoff += _extent_row_size(vd, eoff, run_len) or 24
         if total_clusters == needed and candidate_extents:
             for _e in candidate_extents:
-                _e["plcn"] = tr.tr(_e["vlcn"])
+                _e["plcn"] = 0 if _e.get("is_hole") else tr.tr(_e["vlcn"])      # A1: holes are not addresses
             result["extents"] = candidate_extents
             return
 
     # Fallback: single-extent pattern (0x80000002 marker)
+    if not allow_marker_scan:
+        return
     for scan_off in range(rec_off + 4, rec_end - 16, 4):
         if le32(vd, scan_off) == _DATA_ATTR_MARKER:
             vlcn = le32(vd, scan_off + 4)
@@ -7481,8 +8671,9 @@ def _find_extents_in_subrecord(vd, rec_off, rec_size, needed, tr, cs, result):
                 result["decoder"] = "marker-scan"
                 return
 
-def _parse_extents_from_type40(vd, cs, tr):
-    """Parse data extent information from a type 0x40 value."""
+def _parse_extents_from_type40(vd, cs, tr, allow_marker_scan=True):
+    """Parse data extent information from a type 0x40 value. See `_find_extents_in_subrecord` for what
+    `allow_marker_scan=False` withholds and why the sparse path withholds it."""
     result = {
         "file_size": 0, "alloc_size": 0, "file_attrs": 0,
         "timestamps": [], "extents": [], "val_len": len(vd),
@@ -7500,7 +8691,7 @@ def _parse_extents_from_type40(vd, cs, tr):
     while off < len(vd) - 4:
         rec_size = le32(vd, off)
         if rec_size == 0 or rec_size > len(vd) - off or rec_size > 4096: break
-        _find_extents_in_subrecord(vd, off, rec_size, needed, tr, cs, result)
+        _find_extents_in_subrecord(vd, off, rec_size, needed, tr, cs, result, allow_marker_scan)
         off += rec_size
     return result
 
@@ -7521,6 +8712,49 @@ def _contiguous_cover(extents, need):
             return False
         pos += e["clusters"]
     return pos == need
+
+
+def _sparse_rows_ok(exts, need, size_cl):
+    """A1/K002. A SPARSE file's extent rows tile only its ALLOCATED clusters, at their LOGICAL positions —
+    the unallocated ranges between them carry no row at all. `lab314_main`'s only sparse file is one row at
+    file_vcn 0 and one at file_vcn 15, allocation 2 clusters, size 16 clusters: a perfectly healthy map that
+    `_contiguous_cover` rejects, because it demands a gapless tile of [0, need). The consequence was silence —
+    the file vanished from `dataruns` with no message, while the tool's own summary printed
+    `Data in extents: 619` beside `With decoded extents: 617` and compared neither.
+
+    Accepts iff the rows are ascending, non-overlapping, end within the file, and their cluster COUNT equals
+    the declared allocation. The gaps are the holes. This is used ONLY when the record carries
+    FILE_ATTRIBUTE_SPARSE_FILE, so the gapless guard still protects every ordinary file."""
+    if need <= 0 or not exts:
+        return False
+    pos = 0
+    total = 0
+    for e in sorted(exts, key=lambda e: e["file_vcn"]):
+        if e["file_vcn"] < pos or e["clusters"] <= 0:
+            return False                       # overlap, or a zero-length run
+        pos = e["file_vcn"] + e["clusters"]
+        total += e["clusters"]
+    return total == need and (size_cl <= 0 or pos <= size_cl)
+
+
+def _fill_sparse_holes(exts, size_cl):
+    """Make a sparse map's implicit gaps EXPLICIT hole rows, so every consumer sees one complete map of the
+    file and nothing has to infer a hole from an absence. `dataruns` can then list holes as holes (K002)
+    instead of blanking the file, and reassembly zero-fills them through the same path as a flagged hole."""
+    out = []
+    pos = 0
+    for e in sorted(exts, key=lambda e: e["file_vcn"]):
+        if e["file_vcn"] > pos:
+            out.append({"vlcn": 0, "plcn": 0, "file_vcn": pos, "clusters": e["file_vcn"] - pos,
+                        "flags": EXT_FLAG_SPARSE_HOLE, "disk_offset": 0,
+                        "is_hole": True, "hole_source": "unallocated range"})
+        out.append(e)
+        pos = e["file_vcn"] + e["clusters"]
+    if size_cl > pos:
+        out.append({"vlcn": 0, "plcn": 0, "file_vcn": pos, "clusters": size_cl - pos,
+                    "flags": EXT_FLAG_SPARSE_HOLE, "disk_offset": 0,
+                    "is_hole": True, "hole_source": "unallocated range"})
+    return out
 
 
 def _parse_inline_holder_extents(vd, cs, tr):
@@ -7581,6 +8815,7 @@ def _parse_inline_holder_extents(vd, cs, tr):
         uniq[(file_vcn, vlcn, run_len, flags)] = {
             "vlcn": vlcn, "plcn": 0,
             "file_vcn": file_vcn, "clusters": run_len, "flags": flags, "disk_offset": 0,
+            "is_hole": _extent_is_hole(flags, vlcn),        # A1
         }
     exts = sorted(uniq.values(), key=lambda e: e["file_vcn"])
     if not _contiguous_cover(exts, need):
@@ -7593,11 +8828,12 @@ def _parse_inline_holder_extents(vd, cs, tr):
     # 6,520 of 52,200 candidates were untranslatable, but only 45 of them survive into an accepted cover —
     # so deferring the translation removes 6,475 false misses and keeps every genuine one.
     for e in exts:
-        e["plcn"] = tr.tr(e["vlcn"]) if e["vlcn"] else 0
+        # A1: a hole is never translated and never read -- its VLCN is a mirror of its FVCN, not an address.
+        e["plcn"] = 0 if e.get("is_hole") else (tr.tr(e["vlcn"]) if e["vlcn"] else 0)
     return exts
 
 
-def _decode_holder_extents(vb, cs, tr, ctx=None):
+def _decode_holder_extents(vb, cs, tr, ctx=None, allow_marker_scan=True):
     """Hybrid, cover-guarded extent decode for a non-resident file's stored extents — used for BOTH the
     inline-holder value (long key_flags=0x01, §C.3b) AND the type-0x40 backing record (key_flags=0x02, §C.3a),
     which share the same $DATA-holder layout. Tries the embedded B+-tree index array first (decodes fragmented /
@@ -7634,15 +8870,22 @@ def _decode_holder_extents(vb, cs, tr, ctx=None):
     if not exts:
         exts = _parse_inline_holder_extents(vb, cs, tr)
     if not exts:
-        exts = _parse_extents_from_type40(vb, cs, tr)["extents"]
+        exts = _parse_extents_from_type40(vb, cs, tr, allow_marker_scan)["extents"]
     if not _contiguous_cover(exts, need):
-        return []
+        # A1/K002: a sparse file's rows tile only the allocated clusters (see _sparse_rows_ok). Gated on
+        # FILE_ATTRIBUTE_SPARSE_FILE so the gapless guard is unchanged for every other file.
+        _sparse = len(vb) >= 0x4C and bool(le32(vb, 0x48) & 0x200)
+        _size_cl = ((le64(vb, 0x58) + cs - 1) // cs) if len(vb) >= 0x60 else 0
+        if not (_sparse and _sparse_rows_ok(exts, need, _size_cl)):
+            return []
+        exts = _fill_sparse_holes(exts, _size_cl)
     # Report any address in an ACCEPTED cover that the container table cannot map. The cover is
     # structurally complete, so the extents are real; an unmappable address means the read of
     # those clusters will fall back to identity and return whatever is at that physical offset.
     # Silence here is how wrong bytes reach the operator looking like right ones.
     if tr is not None:
-        bad = [e["vlcn"] for e in exts if e.get("vlcn") and not _vlcn_mappable(tr, e["vlcn"])]
+        bad = [e["vlcn"] for e in exts
+               if e.get("vlcn") and not e.get("is_hole") and not _vlcn_mappable(tr, e["vlcn"])]
         if bad:
             _skip_note("extent cover (unmappable VLCN)",
                        "%d of %d addresses, first 0x%x" % (len(bad), len(exts), bad[0]),
@@ -7739,14 +8982,22 @@ def _extent_node_map(buf, N, f, ps, cs, tr, depth=4, seen=None):
             if run == 0 or row_sz not in (24, 24 + run * 4):
                 continue
             vlcn = le64(buf, ro)
-            if vlcn == 0 or not _vlcn_mappable(tr, vlcn):
+            flags = le32(buf, ro + 8)
+            # A1: a HOLE row is part of the map, not a reason to abandon it. It was dropped here (`vlcn == 0`
+            # never fires on a hole, and a hole's mirrored VLCN is unmappable), which left a gap the caller's
+            # cover check rejected -- so the whole file fell through to another decoder or to nothing.
+            if _extent_is_hole(flags):
+                out.append({"vlcn": vlcn, "plcn": 0, "file_vcn": le32(buf, ro + 0x0C),
+                            "clusters": run, "flags": flags, "disk_offset": 0, "is_hole": True})
                 continue
+            if vlcn == 0 or not _vlcn_mappable(tr, vlcn):
+                continue          # an UNFLAGGED vlcn-0 row is malformed, not a hole -- fail cleanly
             # NOTE: no translation here. A VLCN is resolved only once the caller has accepted the set as a
             # cover, so a speculative walk that comes to nothing never probes the container table — which
             # would otherwise inflate the "VLCN had no container mapping" count the analyst reads as
             # evidence the output may be incomplete.
             out.append({"vlcn": vlcn, "plcn": None, "file_vcn": le32(buf, ro + 0x0C),
-                        "clusters": run, "flags": le32(buf, ro + 8), "disk_offset": 0})
+                        "clusters": run, "flags": flags, "disk_offset": 0, "is_hole": False})
         return out
     for ro in offs:
         if ro + 0x10 > len(buf):
@@ -7798,6 +9049,9 @@ def _embedded_data_extents(vd, cs, ctx):
             if not _contiguous_cover(exts, need):
                 return []
             for e in exts:                      # resolve only an accepted cover (see _extent_node_map)
+                if e.get("is_hole"):
+                    e["plcn"] = 0                   # A1: a hole is not an address
+                    continue
                 try:
                     e["plcn"] = tr.tr(e["vlcn"]) if tr else e["vlcn"]
                 except Exception as _e:
@@ -7812,7 +9066,7 @@ def _embedded_data_extents(vd, cs, ctx):
 def _analyze_dir_extents(f, ps, cs, tr, obj_map, dir_oid):
     """Analyze a directory's B+-tree for file data extent information."""
     if dir_oid not in obj_map: return []
-    rows = walk_bplus(f, ps, cs, tr, obj_map[dir_oid])
+    rows = walk_bplus(f, ps, cs, tr, obj_map[dir_oid], oid=dir_oid)
     files = []
     resident_files = []
     type40_map = {}
@@ -7863,7 +9117,7 @@ def _analyze_dir_extents(f, ps, cs, tr, obj_map, dir_oid):
         if oid not in _home_cache:
             m = {}
             if oid in obj_map:
-                for rkd, rvd in walk_bplus(f, ps, cs, tr, obj_map[oid]):
+                for rkd, rvd in walk_bplus(f, ps, cs, tr, obj_map[oid], oid=oid):
                     if len(rkd) >= 24 and le16(rkd, 0) == 0x40 and len(rvd) >= 0x68:
                         m.setdefault(le64(rkd, 8), {"extents": _decode_holder_extents(bytes(rvd), cs, tr,
                                                                                           (f, ps, cs, tr)),
@@ -7935,7 +9189,7 @@ def _analyze_dir_extents(f, ps, cs, tr, obj_map, dir_oid):
                     if ext_info and ext_info.get("raw") else []),
         }
         for ext in info["extents"]:
-            ext["disk_offset"] = ps + ext["plcn"] * cs
+            ext["disk_offset"] = 0 if ext.get("is_hole") else ps + ext["plcn"] * cs   # A1
         results.append(info)
 
     for name, vd in resident_files:
@@ -7956,7 +9210,7 @@ def _analyze_dir_extents(f, ps, cs, tr, obj_map, dir_oid):
             # positional walks as its fallback. Passing ctx is what lets it ask the structural decoder.
             exts = _decode_holder_extents(vb, cs, tr, (f, ps, cs, tr))
             for ext in exts:
-                ext["disk_offset"] = ps + ext["plcn"] * cs
+                ext["disk_offset"] = 0 if ext.get("is_hole") else ps + ext["plcn"] * cs   # A1
             results.append({
                 "name": name, "stream_idx": 0, "target_oid": 0,
                 "file_size": _ml_size, "alloc_size": _alloc,
@@ -7980,15 +9234,23 @@ def _analyze_dir_extents(f, ps, cs, tr, obj_map, dir_oid):
             _find_extents_in_subrecord(vd, 0xA8, len(vd) - 0xA8, needed, tr, cs, ext_info)
             extents = ext_info["extents"]
             for ext in extents:
-                ext["disk_offset"] = ps + ext["plcn"] * cs
+                ext["disk_offset"] = 0 if ext.get("is_hole") else ps + ext["plcn"] * cs   # A1
         ads_list = _parse_ads_from_value(vd, (f, ps, cs, tr)) if len(vd) > 0xA8 else []
         if file_size and get_resident_data_content(vd) is None:
             # Structural decode of this row's own embedded $DATA node; a file whose bytes are inline
             # (resident) is never touched. The dispatcher applies the same preference for every other path.
             _nested = _embedded_data_extents(vd, cs, (f, ps, cs, tr))
+            if not _nested and file_attrs & 0x200 and len(vd) >= 0x68 and le64(vd, 0x60) > 0:
+                # A1/K002: a SPARSE file whose map the nested-node reading does not answer. Its rows tile
+                # only the allocated clusters, so every gapless guard above declines and the file was
+                # dropped from `dataruns` in silence -- on lab314_main that is the volume's ONE sparse file,
+                # 1 of the 2 names behind the tool's own unexplained `619 extent-backed / 617 decoded`.
+                # Gated on FILE_ATTRIBUTE_SPARSE_FILE: no other record reaches this line.
+                _nested = _decode_holder_extents(bytes(vd), cs, tr, (f, ps, cs, tr),
+                                                 allow_marker_scan=False)
             if _nested:
                 for ext in _nested:
-                    ext["disk_offset"] = ps + ext["plcn"] * cs
+                    ext["disk_offset"] = 0 if ext.get("is_hole") else ps + ext["plcn"] * cs   # A1
                 extents = _nested
         entry = {
             "name": name, "file_size": file_size, "alloc_size": alloc_size,
@@ -8071,6 +9333,27 @@ def _parse_dir_entries(f, ps, cs, tr, vlcns):
         })
     return entries
 
+def _entry_identity(vd, is_dir, parent_oid):
+    """(home_oid, file_id) for a directory entry's value -- the FileRef the change journal uses.
+
+    B6: `_walk_dir_tree` left both at 0, so `timestomp` had no identity to correlate on and fell back to
+    the filename for every file. The rules mirror `walk_directory_tree`'s (the CSV's `ObjectRef`):
+    a NON-RESIDENT entry keeps `file_id` at value+0x00 and, for a FILE, the home-directory backref at
+    value+0x08; a RESIDENT file's home is its containing directory and its id is at value+0x80. A
+    directory has no home slot -- the journal references it as `own_oid:0`.
+    `tests/test_identity_parity.py` asserts these agree with the other walker on the corpus.
+    """
+    try:
+        if is_dir:
+            return 0, 0
+        if len(vd) <= NON_RESIDENT_MAX_VALUE:
+            return (le64(vd, 0x08) if len(vd) >= 0x10 else 0,
+                    le64(vd, 0x00) if len(vd) >= 8 else 0)
+        return parent_oid, (le64(vd, 0x80) if len(vd) >= 0x88 else 0)
+    except (ValueError, struct.error, IndexError):
+        return 0, 0
+
+
 def _walk_dir_tree(f, ps, cs, tr, obj_map, oid, path, depth, max_depth, results):
     """Recursively walk directory tree, collecting entries."""
     if oid not in obj_map: return
@@ -8081,9 +9364,12 @@ def _walk_dir_tree(f, ps, cs, tr, obj_map, oid, path, depth, max_depth, results)
     for entry in entries:
         child_path = f"{path}/{entry['name']}" if path else entry["name"]
         entry_type = "DIR " if entry["is_dir"] else "FILE"
+        _ho, _fid = _entry_identity(entry.get("raw_value") or b"", entry["is_dir"], oid)
         results.append({
             "path": child_path, "type": entry_type,
             "oid": entry["child_oid"], **entry,
+            # B6: the FileRef, so corroboration can key on IDENTITY instead of the filename.
+            "home_oid": _ho, "file_id": _fid,
         })
         if entry["is_dir"] and depth < max_depth and entry["child_oid"] in obj_map:
             _walk_dir_tree(f, ps, cs, tr, obj_map, entry["child_oid"],
@@ -8112,7 +9398,7 @@ def _ts_vol_times(f, ps, cs, tr, obj_map):
     """Volume creation/last-modify FILETIMEs from OID 0x500, key-type 0x520 (val+0x90/0xA0)."""
     if 0x500 in obj_map:
         try:
-            for kd, vd in walk_bplus(f, ps, cs, tr, obj_map[0x500]):
+            for kd, vd in walk_bplus(f, ps, cs, tr, obj_map[0x500], oid=0x500):
                 if len(kd) >= 2 and le16(kd, 0) == 0x520 and len(vd) >= 0xA8:
                     return le64(vd, 0x90), le64(vd, 0xA0)
         except Exception:
@@ -8142,7 +9428,17 @@ def cmd_timestomp(image, remaining, partition_start):
     # is given explicitly, so an export is complete.
     _explicit_min = args["min"] is not None
     min_conf = (args["min"] or "HIGH").upper()
-    margin = int(args["margin_days"]) * 24 * 3600 * 10**7 if args["margin_days"] else TS_MARGIN_100NS
+    # K081: `--margin-days` went through a bare int(), so `0.5` escaped as a raw Python
+    # "invalid literal for int() with base 10" traceback text, and `-5` was ACCEPTED -- a negative
+    # tolerance silently inverts the comparison this command's whole verdict rests on. A tolerance is a
+    # non-negative count of days; anything else is a usage error, stated the way every other flag states it.
+    if args["margin_days"]:
+        _md = _int_arg(args["margin_days"], "--margin-days")
+        if _md < 0:
+            die("invalid value for --margin-days: '%s' (a tolerance cannot be negative)" % args["margin_days"])
+        margin = _md * 24 * 3600 * 10**7
+    else:
+        margin = TS_MARGIN_100NS
     max_depth = _int_arg(args["depth"], "--depth") if args["depth"] else DEFAULT_DEPTH
     csv_arg = out_dest if out_fmt == "csv" else None
     # INFO sits BELOW LOW: it is a reported observation (a timestamp-preserving copy), not a suspicion.
@@ -8168,6 +9464,10 @@ def cmd_timestomp(image, remaining, partition_start):
         for r in files:
             name_count[r["name"]] = name_count.get(r["name"], 0) + 1
         journal = False
+        bic_refs = set()         # B6: BASIC_INFO_CHANGE keyed by FileRef, not name
+        usn_create_ref = {}      # B6: FILE_CREATE timestamps keyed by FileRef
+        journal_end = 0          # highest USN the surviving journal records reach
+        journal_truncated = 0    # bytes of journal destroyed AFTER the last surviving record (K076)
         try:
             vd, _meta = locate_change_journal(f, ps, cs, tr, obj_map)
             if vd is not None:
@@ -8176,15 +9476,59 @@ def cmd_timestomp(image, remaining, partition_start):
                     j_data = read_usn_j_stream(f, ps, cs, streams["j_extents"], streams["j_stream_size"])
                     recs = parse_usn_records(j_data)
                     journal = True
-                    tmp = {}
+                    journal_end = max((r.usn for r in recs), default=0)
+                    # B6/K075: these were keyed by FILENAME, and the lookup was gated on the name being
+                    # unique among live files. Both halves lose true positives, which LAB-A measured:
+                    #   * backdate then RENAME  -- the journal holds the OLD name, the file now has a new
+                    #     one, so the lookup misses and the HIGH drops to INFO;
+                    #   * backdate one of TWO LIVE NAMESAKES -- the uniqueness gate blocks corroboration
+                    #     outright, and the HIGH drops to INFO.
+                    # Every NEGATIVE case passed, so this is missed detection, not over-flagging. Key on
+                    # the file's IDENTITY instead: the USN record carries the same FileRef
+                    # (home_oid:file_id) the walk does, and it survives renames and separates namesakes.
+                    # The name-keyed maps are kept as a FALLBACK for records with no usable FileRef.
+                    tmp, tmp_ref = {}, {}
                     for rec in recs:
+                        _ref = (rec.file_oid, rec.file_idx) if (rec.file_oid or rec.file_idx) else None
                         if rec.reason & 0x00000100:  # FILE_CREATE
                             tmp.setdefault(rec.filename, []).append(rec.timestamp)
-                        if rec.reason == 0x00008000 and rec.filename:  # standalone BASIC_INFO_CHANGE
-                            bic_names.add(rec.filename)
+                            if _ref:
+                                tmp_ref.setdefault(_ref, []).append(rec.timestamp)
+                        if rec.reason == 0x00008000:  # standalone BASIC_INFO_CHANGE
+                            if rec.filename:
+                                bic_names.add(rec.filename)
+                            if _ref:
+                                bic_refs.add(_ref)
                     usn_create = tmp
-        except Exception:
+                    usn_create_ref = tmp_ref
+        except Exception as _e:
+            # K077: this swallowed the exception and set journal=False, so a volume whose journal could
+            # not be READ was indistinguishable from one that has no journal -- and the report then said
+            # "absent (intrinsic signals only)", which is a statement about the VOLUME, not about the
+            # read. Corroboration silently degraded and nothing said so.
+            _skip_note("timestomp", "the USN journal: corroboration for this run is INTRINSIC ONLY, and "
+                                    "a missing HIGH is therefore not evidence of absence", _e)
             journal = False
+
+        # K076: does the journal actually COVER the files it is being used to corroborate? Each file
+        # records the $J offset of its own most recent record at $SI+0x40, and those pointers live in the
+        # FILES' records, so they outlive a wipe of $J. If the highest of them is past where the surviving
+        # records end, the journal is truncated and the cross-check cannot be called authoritative.
+        # Free here: `files` is already walked, so no extra pass is needed.
+        if journal and files:
+            # `_walk_dir_tree` (this command's walker, not `walk_directory_tree`) carries the record bytes
+            # but no decoded `usn` field, so read LastUsn where it lives: value+0x68 ($SI+0x40). Bound the
+            # value before trusting it -- a garbled record must not invent a witness.
+            _witness = 0
+            for _r in files:
+                _rv = _r.get("raw_value") or b""
+                if len(_rv) >= 0x70:
+                    _u = le64(_rv, 0x68)
+                    if 0 < _u < (1 << 48) and _u > _witness:
+                        _witness = _u
+            if _witness > journal_end + USN_MAX_RECORD:
+                journal_truncated = _witness - journal_end
+                _JOURNAL_TAIL_DESTROYED.append(journal_truncated)
 
         # F6: HARDLINK_MACB_MISMATCH — a ReFS-native, JOURNAL-INDEPENDENT signal. On ReFS $SI is stored
         # per-name-entry (per hard-link), NOT per-inode as on NTFS, so two names of one file (same
@@ -8192,10 +9536,14 @@ def cmd_timestomp(image, remaining, partition_start):
         # win11refs8g.raw File ID 0x1e, f6.bin Created 2011 vs f6_link.bin Created 2026 (E59 / FN_LINK_003).
         #
         # What this signal does NOT establish (MD_TS_RA_008): a later lab measurement called SetFileTime
-        # through one name of a two-name file and found BOTH rows byte-identical across all 84 bytes, so the
-        # ordinary tool updates every name at once. Therefore (a) agreement between names is NOT evidence of
-        # anything, and (b) the mechanism that produced the observed divergence was never decompiled, so
-        # "the latest Created is the authentic birth" is an inference we cannot support.
+        # through one name of a two-name file and found BOTH rows byte-identical across all 84 bytes.
+        # The mechanism (K083, driver RefsUpdateFileDupInfo) is TWO LAYERS: the file's OWN RECORD takes the
+        # new time at once -- the file has one truth -- while each NAME'S INDEX ENTRY is a lazily refreshed
+        # cache that the driver refreshes only for the name that was OPENED. The lab measurement opened both
+        # names, which is why both rows agreed. Therefore (a) agreement between names is NOT evidence of
+        # anything -- it has two causes, one of them being that somebody read the file -- and (b) the stale
+        # entry is the one nobody opened, which is not the one nobody forged, so "the latest Created is the
+        # authentic birth" is still an inference we cannot support.
         #
         # The divergence is real and anomalous, so the group is still flagged -- but the tier legend must
         # not tell a reader which name is authentic, and neither must the set of rows we flag.
@@ -8209,9 +9557,9 @@ def cmd_timestomp(image, remaining, partition_start):
             hl_groups.setdefault(key, []).append(r)
         # EVERY name of a diverging group is flagged, not just the older one. Flagging only the older
         # name would say the newer one is clean, and that is the retracted claim: a SetFileTime through
-        # one name was measured to update BOTH rows byte-identically (MD_TS_RA_008), so whatever produced
-        # an observed divergence is not that call, its mechanism was never decompiled, and there is no
-        # evidence naming one name authentic. The finding the signal supports is about the GROUP -- these
+        # one name updates the file's own record for every name at once (MD_TS_RA_008), so that call is not
+        # itself the divergence; the divergence is the per-name cache lag above, and being stale names a
+        # name nobody opened, not a name nobody forged -- no evidence names one name authentic. The finding the signal supports is about the GROUP -- these
         # names disagree and nothing routine does that -- so the group is what gets flagged.
         hl_mismatch = set()  # id(r) for every name in a group whose Created values disagree
         for members in hl_groups.values():
@@ -8228,21 +9576,41 @@ def cmd_timestomp(image, remaining, partition_start):
             chg, acc = r.get("change_time", 0), r.get("access_time", 0)
             flags = timestomp_intrinsic_flags(ct, mt, chg, acc, vol_create, vol_modify, margin)
             evidence = list(flags)
+            # B4 (RC2, audit): a HIGH must be TRACEABLE. Each authoritative signal records WHICH record
+            # corroborated it -- the file's FileRef for a journal signal, `hardlink:<sibling path>` for a
+            # per-name divergence -- so a reader can go to that record instead of taking the tier on
+            # trust. An intrinsic ($SI-only) signal has no external record and contributes nothing here.
+            ev_ref = []
             # F6: this file's hard-link names disagree on Created -> journal-independent structural lead.
             hl_conf = id(r) in hl_mismatch
             if hl_conf:
                 evidence.append("HARDLINK_MACB_MISMATCH")
+                _k = (r.get("home_oid", 0), r.get("file_id", 0))
+                _sib = next((m.get("path") for m in hl_groups.get(_k, [])
+                             if m is not r and m.get("path")), None)
+                ev_ref.append("hardlink:%s" % _sib if _sib else "hardlink:%s" % _hx(_k[0]))
             # USN cross-checks (only when the filename is unambiguous among live files)
             usn_conf = False
-            if journal and name_count.get(r["name"], 0) == 1:
-                if r["name"] in bic_names and ("CHANGE_LATE" in flags or "PRE_FORMAT" in flags
-                                               or "CREATE_GT_MODIFY" in flags):
+            if journal:
+                # B6/K075: identity first. `_ref` is this file's FileRef; the journal records carry the
+                # same one, so a rename does not break the lookup and two live namesakes do not collide.
+                _ref = (r.get("home_oid"), r.get("file_id"))
+                _have_ref = bool(usn_create_ref or bic_refs) and (_ref[0] or _ref[1])
+                # The name-keyed path stays as the fallback for records with no usable FileRef, and keeps
+                # its uniqueness gate -- without an identity, an ambiguous name really is ambiguous.
+                _name_ok = name_count.get(r["name"], 0) == 1
+                _bic = (_ref in bic_refs) if _have_ref else (_name_ok and r["name"] in bic_names)
+                if _bic and ("CHANGE_LATE" in flags or "PRE_FORMAT" in flags
+                             or "CREATE_GT_MODIFY" in flags):
                     evidence.append("USN_BASIC_INFO_CHANGE")
+                    ev_ref.append("usn:BASIC_INFO_CHANGE@%s:%s" % (_hx(_ref[0] or 0), _hx(_ref[1] or 0)))
                     usn_conf = True
-                cts = usn_create.get(r["name"])
+                cts = usn_create_ref.get(_ref) if _have_ref else (
+                    usn_create.get(r["name"]) if _name_ok else None)
                 if cts and _ft_valid(ct):
                     if min(abs(ct - u) for u in cts) > margin:
                         evidence.append("USN_CREATE_MISMATCH")
+                        ev_ref.append("usn:FILE_CREATE@%s:%s" % (_hx(_ref[0] or 0), _hx(_ref[1] or 0)))
                         usn_conf = True
             # 1.C: whole-second (.0000000) Created AND Modified = a WEAK "tool-set date" hint. Corpus-measured
             # (30 imgs/134k files) it also fires on legit driver-package / archive-extracted files, so it is a
@@ -8256,18 +9624,18 @@ def cmd_timestomp(image, remaining, partition_start):
             # tiered CHANGE_LATE+PRE_FORMAT as HIGH on a false independence premise; see timestomp_verdict.
             tier, evidence = timestomp_verdict(evidence, usn_conf=usn_conf, hl_conf=hl_conf,
                                                round_ts=round_ts)
-            return tier, evidence
+            return tier, evidence, ev_ref
 
         rows = []
         for r in files:
-            tier, evidence = _classify(r)
+            tier, evidence, ev_ref = _classify(r)
             if tier == "NONE" and not show_all:
                 continue
             rows.append({
                 # Same E87 vocabulary as `search`: this is the DATA axis, so the data words.
                 "path": r["path"],
                 "storage": _hx(r["oid"]) if r.get("oid") else ("(inline)" if r.get("resident") else "(extents)"),
-                "tier": tier, "signals": evidence,
+                "tier": tier, "signals": evidence, "evidence_ref": ev_ref,
                 "created": _filetime_to_str(r.get("create_time", 0)).replace(" UTC", ""),
                 "modified": _filetime_to_str(r.get("modify_time", 0)).replace(" UTC", ""),
                 "changed": _filetime_to_str(r.get("change_time", 0)).replace(" UTC", ""),
@@ -8284,9 +9652,11 @@ def cmd_timestomp(image, remaining, partition_start):
         if csv_arg is not None:
             def _w(out):
                 w = _csv.writer(out)
-                w.writerow(["path", "storage", "confidence", "signals", "created", "modified", "changed", "accessed"])
+                w.writerow(["path", "storage", "confidence", "signals", "evidence_ref",
+                            "created", "modified", "changed", "accessed"])
                 for x in (rows if show_all else export_rows):
                     w.writerow(_csv_row([x["path"], x["storage"], x["tier"], "|".join(x["signals"]),
+                                         "|".join(x.get("evidence_ref") or []),
                                 x["created"], x["modified"], x["changed"], x["accessed"]]))
             if csv_arg == "-":
                 _w(sys.stdout)
@@ -8301,7 +9671,10 @@ def cmd_timestomp(image, remaining, partition_start):
                 "image": os.path.basename(image), "refs_version": f"{vmaj}.{vmin}",
                 "volume_create": _filetime_to_str(vol_create).replace(" UTC", ""),
                 "volume_modify": _filetime_to_str(vol_modify).replace(" UTC", ""),
-                "journal_present": journal, "files_examined": len(files),
+                "journal_present": journal,
+                "journal_truncated_bytes": journal_truncated,      # K076: 0 = the journal covers the files
+                "journal_last_usn": journal_end,
+                "files_examined": len(files),
                 "counts": counts, "suspects": rows if show_all else export_rows,
             }, out_dest, "timestomp report")
             return 0
@@ -8313,7 +9686,20 @@ def cmd_timestomp(image, remaining, partition_start):
         print(f"  Image:           {os.path.basename(_display_image(image))}  (ReFS {vmaj}.{vmin})")
         print(f"  Volume created:  {_filetime_to_str(vol_create).replace(' UTC','')}")
         print(f"  Volume modified: {_filetime_to_str(vol_modify).replace(' UTC','')}")
-        print(f"  USN journal:     {'present (authoritative cross-check ON)' if journal else 'absent (intrinsic signals only)'}")
+        if not journal:
+            _jtxt = "absent or unreadable (intrinsic signals only)"
+        elif journal_truncated:
+            _jtxt = ("present but TRUNCATED - %d bytes after the last surviving record were destroyed; "
+                     "the cross-check is INCOMPLETE" % journal_truncated)
+        else:
+            _jtxt = "present (authoritative cross-check ON)"
+        print(f"  USN journal:     {_jtxt}")
+        if journal_truncated:
+            print("                   A file on this volume still points at USN %d but the journal ends at"
+                  " %d." % (journal_end + journal_truncated, journal_end))
+            print("                   Rows that would have been corroborated by the destroyed records are"
+                  " reported at a LOWER tier than the evidence warrants, so a missing HIGH here is NOT")
+            print("                   evidence that nothing was stomped.")
         print(f"  Files examined:  {len(files)}")
         print(f"  Flagged:         {len(flagged)}  (HIGH {counts['HIGH']} / MEDIUM {counts['MEDIUM']} / "
               f"LOW {counts['LOW']} / INFO {counts['INFO']} — INFO = ambiguous: a timestamp-preserving "
@@ -8335,6 +9721,9 @@ def cmd_timestomp(image, remaining, partition_start):
         if not suspects and not show_all:
             hidden = counts["MEDIUM"] + counts["LOW"] + counts["INFO"] if min_conf == "HIGH" else 0
             if hidden:
+                if journal_truncated:
+                    print("  No HIGH-confidence timestamp anomalies WERE FOUND - but the journal is "
+                          "truncated (above), so this is not a clean result.")
                 print(f"  No HIGH-confidence timestamp anomalies. {hidden} lower-tier row(s) exist "
                       f"(MEDIUM {counts['MEDIUM']} / LOW {counts['LOW']}) — `--min MEDIUM` or `--min LOW` to see them.")
             else:
@@ -8433,7 +9822,11 @@ def _collect_inline_payloads(f, ps, cs, tr, obj_map):
     for oid, vlcns in obj_map.items():
         try:
             for kd, vd in walk_bplus(f, ps, cs, tr, vlcns):
-                if not (len(kd) >= 4 and le16(kd, 0) == 0x30):
+                # K099 (audit): type-0x30 ONLY missed every SPLIT record. When a file's record is split
+                # out into a type-0x40 backing, its inline stream travels in that backing -- so a bundle
+                # carried content the manifest did not declare, which is the disclosure promise the
+                # manifest exists to keep. Both row types are censused.
+                if not (len(kd) >= 4 and le16(kd, 0) in (0x30, 0x40)):
                     continue
                 try:
                     c = get_resident_data_content(vd, (f, ps, cs, tr))
@@ -8517,6 +9910,23 @@ def _bundle_open(bdir):
               % (PROG, len(missing), ", ".join(missing[:3])), file=sys.stderr)
 
 
+# K057: `block_lcn` in `mlog_log_index.csv` counts 4 KiB MLog BLOCKS, not clusters -- the producer writes
+# `plcn * blocks_per_cluster + bi`. Three consumers multiplied it by the CLUSTER size instead, which is
+# identical on a 4 KiB volume and 16x wrong on a 64 KiB one: a freshly made bundle of a 64K volume FAILED
+# its own verify-bundle on 15 rows, rehydrated every log block 16x too far, and reported "No redo records
+# found in data area" where the image has 13,420. The MLog block unit is fixed at 4 KiB on every volume
+# (the log-block size lives at page+0x0C and is 0x1000 regardless of cluster size), so it is named once
+# here and the three sites use it.
+MLOG_BLOCK = 0x1000
+
+
+def _mlog_block_addr(block_lcn, cs):
+    """Byte address of a 4 KiB MLog block given its block index. On a 4 KiB volume this is
+    `block_lcn * cs`, exactly as before; on 64 KiB it is the correct within-cluster placement."""
+    bpc = max(1, cs // MLOG_BLOCK)
+    return (block_lcn // bpc) * cs + (block_lcn % bpc) * MLOG_BLOCK
+
+
 def cmd_verify_bundle(bundle_dir):
     """Say whether a bundle is whole, without the examiner having to open anything else.
 
@@ -8566,12 +9976,19 @@ def cmd_verify_bundle(bundle_dir):
                 except (KeyError, ValueError):
                     problems.append("%s line %d is malformed" % (idx_name, ln_no))
                     continue
-                if off < 0 or off + n * cs > blob_len:
+                _span = n * (MLOG_BLOCK if key == "block_lcn" else cs)   # K057
+                if off < 0 or off + _span > blob_len:
                     problems.append("%s line %d points past the end of %s (%d+%d > %d)"
-                                    % (idx_name, ln_no, blob_name, off, n * cs, blob_len))
+                                    % (idx_name, ln_no, blob_name, off, _span, blob_len))
     # declared absences are information, not failures -- but they must be visible
     for w in (man.get("warnings") or []):
-        notes.append("export warning: %s: %s" % (w.get("what"), w.get("reason")))
+        # K020: a declared ABSENCE ("no MLog on this volume") is information; an export that FAILED is a
+        # defect in the bundle, and the two were reported identically as notes, leaving rc 0 either way.
+        if w.get("failed"):
+            problems.append("an export FAILED when this bundle was made: %s: %s"
+                            % (w.get("what"), w.get("reason")))
+        else:
+            notes.append("export warning: %s: %s" % (w.get("what"), w.get("reason")))
     if man.get("absent_pages"):
         notes.append("%d page(s) were already absent when the bundle was made" % len(man["absent_pages"]))
     inl = man.get("inline_content") or {}
@@ -8579,20 +9996,36 @@ def cmd_verify_bundle(bundle_dir):
         notes.append("carries inline file content: %s stream(s), %s byte(s)"
                      % (inl.get("streams"), inl.get("bytes")))
     # it must actually rehydrate and bootstrap
-    if not problems:
-        tmpd = tempfile.mkdtemp(prefix="forefst_vb_")
-        try:
-            _m, missing = _bundle_rehydrate(bundle_dir, os.path.join(tmpd, "r.raw"))
-            if missing:
-                problems.append("%d artefact(s) could not be placed: %s" % (len(missing), missing[:3]))
-            else:
-                fh, _ps, _cs, _tr, _roots, _om, _vj, _vn, _cl = bootstrap(
-                    os.path.join(tmpd, "r.raw"), 0)
+    # K189: this ran only `if not problems`, so the one check that proves the bundle is USABLE was skipped
+    # on exactly the bundles most likely to need it -- an index problem suppressed it. And bootstrapping
+    # is too weak a test on its own: `bootstrap` accepts an EMPTY object map, so a bundle carrying no
+    # metadata pages rehydrated, bootstrapped and PASSED. Run it always, and require the rehydrated volume
+    # to actually contain something.
+    tmpd = tempfile.mkdtemp(prefix="forefst_vb_")
+    try:
+        _m, missing = _bundle_rehydrate(bundle_dir, os.path.join(tmpd, "r.raw"))
+        if missing:
+            problems.append("%d artefact(s) could not be placed: %s" % (len(missing), missing[:3]))
+        else:
+            fh, _ps, _cs, _tr, _roots, _om, _vj, _vn, _cl = bootstrap(
+                os.path.join(tmpd, "r.raw"), 0)
+            try:
+                _nobj = len(_om or {})
+                _nroots = sum(1 for _r in (_roots or []) if _r)
+                if not _nobj or not _nroots:
+                    problems.append(
+                        "the rehydrated bundle bootstraps but is EMPTY (%d object-table entries, "
+                        "%d populated roots): it carries no usable metadata, so 'bootstraps' is not "
+                        "evidence that it is complete" % (_nobj, _nroots))
+                else:
+                    notes.append("rehydrated and bootstrapped: %d object-table entries, %d populated roots"
+                                 % (_nobj, _nroots))
+            finally:
                 fh.close()
-        except (OSError, ValueError, KeyError, struct.error) as e:
-            problems.append("rehydrated bundle does not bootstrap: %s: %s" % (type(e).__name__, e))
-        finally:
-            shutil.rmtree(tmpd, ignore_errors=True)
+    except (OSError, ValueError, KeyError, struct.error) as e:
+        problems.append("rehydrated bundle does not bootstrap: %s: %s" % (type(e).__name__, e))
+    finally:
+        shutil.rmtree(tmpd, ignore_errors=True)
     print("verify-bundle: %s — %s" % ("FAIL" if problems else "PASS", os.path.abspath(bundle_dir)))
     for n in notes:
         print("   note: %s" % n)
@@ -8699,7 +10132,8 @@ def _bundle_rehydrate(bdir, dest):
     for r in meta:
         hi = max(hi, int(r["head_plcn"], 16) + int(r["n_clusters"]))
     for r in mlog:
-        hi = max(hi, int(r["block_lcn"], 16) + 1)
+        # K057: block_lcn is a 4 KiB block index; convert to the cluster it lands in.
+        hi = max(hi, _mlog_block_addr(int(r["block_lcn"], 16), cs) // cs + 1)
     for r in usn:
         hi = max(hi, int(r["plcn"], 16) + int(r["clusters"]))
     size = max((last_lba + 1) * SECTOR, (hi + 8) * cs, int(m.get("provenance", {}).get(
@@ -8735,7 +10169,10 @@ def _bundle_rehydrate(bdir, dest):
             for r in idx:
                 off = int(r["byte_offset"])
                 n = int(r[nkey]) if nkey else 1
-                if not place(out, blob, int(r[key], 16) * cs, off, off + n * cs):
+                _k = int(r[key], 16)
+                _addr = _mlog_block_addr(_k, cs) if key == "block_lcn" else _k * cs      # K057
+                _end = off + n * (MLOG_BLOCK if key == "block_lcn" else cs)
+                if not place(out, blob, _addr, off, _end):
                     missing.append("%s row @%s" % (fn, r[key]))
     return m, missing
 
@@ -8779,21 +10216,31 @@ class _ReadRecorder:
         return getattr(self._fh, name)
 
 
-def _source_pin(path, probe=1 << 16):
+def _source_pin(path, probe=1 << 16, ps=None, cs=None, chkp=None):
     """A cheap CONTENT identity for the image a bundle was exported from.
 
     Deliberately not a whole-image SHA-256: these volumes are up to 2 TB apparent for a few hundred MB of
     data, and hashing the holes would cost minutes to fingerprint the same bytes. Deliberately not a hash
-    of the sparse LAYOUT either -- that varies with how the image was written or unpacked, which is the
-    defect the hole fixtures' pin had. Size plus the first 64 KiB (protective MBR + GPT, which carries the
-    partition GUIDs) identifies the source well enough to say "this bundle came from that image", and it
-    is reproducible however the reader obtained it.
+    of the sparse LAYOUT either -- that varies with how the image was written or unpacked.
+
+    K021: size + first 64 KiB (protective MBR + GPT) was NOT a content identity -- four states of one
+    volume (lab314_main / _step2 / _step3 / _step3_dirty) share that prefix byte-for-byte and so collided
+    on ONE pin, though their content differs. When the bootstrap context is supplied, the pin ALSO covers
+    the primary SUPB and BOTH checkpoint clusters, which carry the volume's virtual clock, LSNs and root
+    page references and therefore change with every committed transaction. Measured: the four states then
+    produce four distinct pins. Cost is three extra cluster reads -- no holes hashed. Without the context
+    (a bare path) it falls back to the prefix-only form, which still says "some image of this size/GPT".
     """
     try:
         h = hashlib.sha256()
         h.update(b"size=%d\n" % os.path.getsize(path))
         with open(path, "rb") as fh:
             h.update(fh.read(probe))
+            if ps is not None and cs and chkp:
+                h.update(b"|state|")                       # K021: state-dependent clusters
+                for lcn in [SUPB_LCN] + list(chkp):
+                    fh.seek(ps + lcn * cs)
+                    h.update(fh.read(cs))
         return h.hexdigest()
     except OSError:
         return None
@@ -8900,13 +10347,17 @@ def content_holes(f, ps, cs, runs, what, stream_size=None):
     """
     name = getattr(f, "name", None)
     if not isinstance(name, str) or not runs:
-        return None if runs else 0
+        if runs:
+            _CONTENT_UNDET.append(what)     # K018: unknown, and recorded as unknown
+            return None
+        return 0
     try:
         fd = os.open(name, os.O_RDONLY)
     except OSError as _e:
         # None means "the host cannot say", which callers already treat as undeterminable -- but the
         # REASON should not vanish: this is the check that decides whether output bytes are trustworthy.
         _skip_note("content hole check", what, _e)
+        _CONTENT_UNDET.append(what)         # K018
         return None
     try:
         total = 0
@@ -8926,6 +10377,10 @@ def content_holes(f, ps, cs, runs, what, stream_size=None):
                 span = min(span, stream_size - foff)
             got = _hole_bytes_in(fd, ps + plcn * cs, ps + plcn * cs + span)
             if got is None:
+                # K018: the host could not answer SEEK_DATA for this run. That is the UNKNOWN state, and
+                # it is the one that actually occurs -- the two earlier returns cover a missing filename
+                # and a failed open, neither of which is how an unsupported filesystem presents.
+                _CONTENT_UNDET.append(what)
                 return None
             total += got
     finally:
@@ -8964,7 +10419,19 @@ def _content_hole_summary():
 # `--refuse-holes` withholds the bytes. Until 1.11.2 the BULK exports had only the note, so a script could
 # not branch on them and an examiner got no sidecar. These three give the bulk paths the same contract,
 # per OUTPUT STREAM: each written file is treated exactly as `extract` treats its one file.
+# K018: hole coverage has THREE states, not two -- present, none, and "this host cannot say". The third
+# was collapsed into the second on every content path except `extract`'s main loop, so a stream whose
+# coverage was UNKNOWN was written under --refuse-holes and its sidecar said "none". "Not measured" and
+# "measured and clean" are different evidential positions; they now have different names.
+_CONTENT_UNDET = []        # K018: `what` strings whose hole coverage could not be determined
+_UNDET_STREAMS = []        # per-destination records for the sidecar
 _REFUSE_HOLES = False      # set from --refuse-holes by any command that writes content in bulk
+
+
+def _hole_mark():
+    """Mark for `_guarded_extract_write(holes_mark=...)`: both registers, so a caller can tell whether
+    the producer recorded a hole OR an undeterminable range while making these bytes."""
+    return (len(_CONTENT_HOLES), len(_CONTENT_UNDET))
 _HOLE_STREAMS = []         # [{"file", "what", "hole_bytes"}] -- what the bulk sidecar records
 _HOLE_REFUSALS = []        # destinations NOT written because --refuse-holes was in force
 
@@ -8976,7 +10443,10 @@ def _bulk_hole_finish(out_dir):
     Written even when nothing drew from holes -- an examiner keeping sidecars beside extracted files should
     not have to infer, from the absence of one, whether the run was checked and clean or never checkable.
     That is the same reason `extract` writes a sidecar for the undeterminable case."""
-    status = "holes_present" if _HOLE_STREAMS else "none"
+    # K018: "none" must mean measured-and-clean. When a stream's coverage could not be determined the
+    # sidecar says so, because an examiner reading "none" is entitled to read it as a measurement.
+    status = ("holes_present" if _HOLE_STREAMS else
+              "undeterminable" if _UNDET_STREAMS else "none")
     for _h in _HOLE_STREAMS:
         try:
             _h["file"] = os.path.relpath(_h["file"], out_dir)
@@ -8985,6 +10455,8 @@ def _bulk_hole_finish(out_dir):
     doc = {"status": status,
            "streams_with_holes": len(_HOLE_STREAMS),
            "hole_bytes": sum(h["hole_bytes"] for h in _HOLE_STREAMS),
+           "streams_undeterminable": len(_UNDET_STREAMS),
+           "undeterminable": _UNDET_STREAMS,
            "refused": [os.path.relpath(_r, out_dir) for _r in _HOLE_REFUSALS],
            "streams": _HOLE_STREAMS,
            "note": "Bytes listed here were read from ranges the image stores as holes, which read back as "
@@ -9007,6 +10479,13 @@ def _bulk_hole_finish(out_dir):
     if _HOLE_STREAMS:
         print(f"[{PROG}] wrote {os.path.join(out_dir, 'holes.json')} naming the "
               f"{len(_HOLE_STREAMS)} stream(s) that drew from holes.", file=sys.stderr)
+        return 2
+    if _UNDET_STREAMS:
+        # K018: `extract`'s main loop already exits 2 on "could not determine"; the bulk paths said 0.
+        # An unmeasured stream is not a clean one.
+        print(f"[{PROG}] wrote {os.path.join(out_dir, 'holes.json')}: hole coverage could NOT be "
+              f"determined for {len(_UNDET_STREAMS)} stream(s) on this host — they are not known to be "
+              f"clean, only unchecked.", file=sys.stderr)
         return 2
     return 0
 
@@ -9039,6 +10518,9 @@ def _extent_hole_ranges(f, ps, cs, exts, file_size):
             fend = min(fstart + ext["clusters"] * cs, file_size)
             if fend <= fstart:
                 continue
+            if ext.get("is_hole"):
+                continue                  # A1: a SPARSE HOLE's zeros are the file's own content, decided by
+                                          # the extent flag -- not an image hole, and not "undeterminable".
             istart = ps + ext["plcn"] * cs
             holes = _hole_ranges_in(fd, istart, istart + (fend - fstart))
             if holes is None:
@@ -9076,6 +10558,8 @@ def _extent_hole_bytes(f, ps, cs, exts):
     try:
         total = 0
         for ext in exts:
+            if ext.get("is_hole"):
+                continue                  # A1: see _content_hole_ranges
             n = _hole_bytes_in(fd, ps + ext["plcn"] * cs, ps + (ext["plcn"] + ext["clusters"]) * cs)
             if n is None:
                 return None
@@ -9131,6 +10615,8 @@ def get_file_content(f, ps, cs, tr, info, verify_integrity=False, _content_what=
     buf = bytearray(alloc)
     _runs = []
     for ext in sorted_exts:
+        if _ext_skip_read(ext):
+            continue                                   # A1: hole or VLCN 0 -> buf stays zero; never read a cluster
         plcn = ext["plcn"]
         for i in range(ext["clusters"]):
             off = (ext["file_vcn"] + i) * cs
@@ -9146,6 +10632,8 @@ def get_file_content(f, ps, cs, tr, info, verify_integrity=False, _content_what=
         content_holes(f, ps, cs, _runs, _content_what, stream_size=file_size)
     out = bytes(memoryview(buf)[:file_size])
     meta = {"source": "extents", "size": file_size, "n_extents": len(sorted_exts)}
+    if verify_integrity:                       # A3: branch (A) attached this; branch (B) never did
+        meta["integrity"] = _verify_inline_integrity(f, ps, cs, tr, info.get("raw_value", b""))
     # Only ask about holes when the content is entirely zero -- that is the only case where a hole changes
     # the answer, and it keeps the syscalls off the path for every normal file.
     if file_size and not any(out):
@@ -9158,7 +10646,7 @@ def get_file_content(f, ps, cs, tr, info, verify_integrity=False, _content_what=
 def cmd_extract(image, remaining, partition_start):
     # `extract` branches on args["refuse_holes"] directly rather than the module global, so a bundle has
     # to be folded in HERE or every branch below would still write zeros it knows are not the file's.
-    args = _parse_args(remaining, flags=["--no-verify-integrity", "--refuse-holes"],
+    args = _parse_args(remaining, flags=["--no-verify-integrity", "--refuse-holes", "--fill-holes"],
                        valued=["--oid", "--depth", "--path", "--id", "-o", "--output"])
     # accept a bare name, an absolute /dir/file path, --path, or --id HomeOid:FileId (symmetric with `details`)
     if _BUNDLE is not None:
@@ -9171,7 +10659,7 @@ def cmd_extract(image, remaining, partition_start):
     max_depth = _int_arg(args["depth"], "--depth") if args["depth"] else DEFAULT_DEPTH
     outp = args["o"] or args["output"]
 
-    def _emit_checked(data, hb0, ranges=None, size=None):
+    def _emit_checked(data, hb0, ranges=None, size=None, subject=None):
         """THE content exit of `cmd_extract`. Returns the process exit code.
 
         Every branch that turns clusters into output ends here, because the hole report used to live at
@@ -9185,31 +10673,37 @@ def cmd_extract(image, remaining, partition_start):
         recorded by `content_holes()` since `hb0` is used, which is all the shared-cluster paths can know.
         """
         _sz = target.get("file_size", 0) if size is None else size
+        # K016 (audit): a stream's hole report named the HOST file, so a reader was told the wrong
+        # object had zero-filled bytes. `subject` names what was actually written.
+        _subj = subject or target['name']
+        # A3: the volume's own CRC-32C said these bytes are not the bytes it stored. That is a FINDING, and
+        # this is the one exit that decides the code -- so it is folded in here rather than at each caller.
+        _icrc_bad = target.get("name") in _INTEGRITY_FAILED
         _hb = sum(b for _w, b in _CONTENT_HOLES[hb0:])
         if ranges:
             _hb = sum(n for _o, n in ranges)
         if not ranges and not _hb:
             _emit_raw(data)
-            return 0
+            return 2 if _icrc_bad else 0
         _verb = "would be written from" if args["refuse_holes"] else "were written from"
         if ranges:
             _rtxt = ", ".join(f"{o}-{o + n - 1}" for o, n in ranges[:8])
             if len(ranges) > 8:
                 _rtxt += f", … ({len(ranges)} ranges)"
-            print(f"[{PROG}] NOTE: {_hb} of {_sz} bytes of '{target['name']}' {_verb} ranges the "
+            print(f"[{PROG}] NOTE: {_hb} of {_sz} bytes of '{_subj}' {_verb} ranges the "
                   f"image stores as holes, which read back as zeros: {_rtxt}. A sparse image stores a file's "
                   f"own zero content the same way it stores a range that was never captured, so this does "
                   f"not by itself mean the data is missing — and does not confirm the zeros are the file's. "
                   f"Corroborate before relying on them.", file=sys.stderr)
         else:
-            print(f"[{PROG}] NOTE: {_hb} of {_sz} bytes of '{target['name']}' {_verb} ranges the image "
+            print(f"[{PROG}] NOTE: {_hb} of {_sz} bytes of '{_subj}' {_verb} ranges the image "
                   f"stores as holes, which read back as zeros. A sparse image stores a file's own zero "
                   f"content the same way it stores a range that was never captured, so this does not by "
                   f"itself mean the data is missing — and does not confirm the zeros are the file's. "
                   f"Corroborate before relying on them.", file=sys.stderr)
         if outp and not args["refuse_holes"]:          # no sidecar beside a file we are not writing
             _sidecar = outp + ".holes.json"
-            _doc = {"file": target["name"], "size": _sz, "status": "holes_present", "hole_bytes": _hb,
+            _doc = {"file": _subj, "size": _sz, "status": "holes_present", "hole_bytes": _hb,
                     "note": "Ranges read back as zeros because the image stores them as holes. On a "
                             "sparsely-stored image that is also how genuine zero content is stored; the "
                             "image cannot distinguish them."}
@@ -9296,7 +10790,7 @@ def cmd_extract(image, remaining, partition_start):
                 info["path"] = full_path
                 all_results.append(info)
             if depth > 0:
-                dir_rows = walk_bplus(f, ps, cs, tr, obj_map[dir_oid])
+                dir_rows = walk_bplus(f, ps, cs, tr, obj_map[dir_oid], oid=dir_oid)
                 for kd, vd in dir_rows:
                     if len(kd) >= 4 and le16(kd, 0) == 0x30 and len(vd) >= 0x44:
                         child_attrs = le32(vd, 0x40)
@@ -9363,7 +10857,19 @@ def cmd_extract(image, remaining, partition_start):
                       f"{len(ads_match['extents'])} extents):", file=sys.stderr)
                 if target.get("file_attrs", 0) & 0x4000:
                     print(f"[{PROG}] WARNING: host is EFS-encrypted — ADS bytes are CIPHERTEXT.", file=sys.stderr)
-                return _emit_checked(buf, _hb0, size=ads_match.get("stream_size", len(buf)))
+                # K016: pass this STREAM's own hole ranges and name the stream. Without them the
+                # report fell to the byte-count branch, which named the host file and justified the
+                # missing ranges with "shares blocks with other streams" -- false here: 0 of 1,235
+                # non-hole data runs on the volume overlap the range it blamed.
+                # `_read_vlcn_extents` takes (file_vcn, vlcn, run) TUPLES; `_extent_hole_ranges` takes
+                # the dict form the main path uses. Convert rather than teach one of them both shapes.
+                _ads_exts = [{"file_vcn": _fv, "vlcn": _vl, "clusters": _rl, "plcn": (tr.tr(_vl) if tr else _vl)}
+                             for _fv, _vl, _rl in ads_match["extents"]]
+                _ads_ranges = _extent_hole_ranges(f, ps, cs, _ads_exts,
+                                                  ads_match.get("stream_size", len(buf)))
+                return _emit_checked(buf, _hb0, ranges=(_ads_ranges or None),
+                                     size=ads_match.get("stream_size", len(buf)),
+                                     subject=f"{target['name']}:{stream_name}")
             die(f"ADS '{stream_name}' storage is '{ads_match['storage']}' — its content is not inline in the "
                 f"directory value and no extent list was found, so it cannot be extracted from this record")
 
@@ -9437,20 +10943,8 @@ def cmd_extract(image, remaining, partition_start):
                               file=sys.stderr)
                     if not args["no_verify_integrity"]:
                         _iv = _verify_inline_integrity(f, ps, cs, tr, target.get("raw_value", b""))
-                        if _iv is not None:                 # the file carries inline CRC32-C integrity checksums
-                            if _iv["bad_count"] == 0:
-                                _extra = f", {_iv['unset']} unset" if _iv["unset"] else ""
-                                print(f"[{PROG}] integrity: {_iv['ok']}/{_iv['checked']} clusters CRC32-C-verified"
-                                      f"{_extra}.", file=sys.stderr)
-                            else:
-                                print(f"[{PROG}] WARNING: INTEGRITY MISMATCH — {_iv['bad_count']} of "
-                                      f"{_iv['checked']} checksummed clusters FAILED CRC32-C (possible corruption/"
-                                      f"tampering; bytes still extracted):", file=sys.stderr)
-                                for _fv, _vl, _pl, _st, _ac in _iv["bad"][:8]:
-                                    print(f"[{PROG}]   file_vcn={_fv} vlcn={_vl} plcn={_pl} "
-                                          f"stored=0x{_st:08x} actual=0x{_ac:08x}", file=sys.stderr)
-                                if _iv["bad_count"] > 8:
-                                    print(f"[{PROG}]   ... and {_iv['bad_count'] - 8} more", file=sys.stderr)
+                        if _integrity_report(_iv, target["name"]):
+                            _INTEGRITY_FAILED.append(target["name"])      # A3: a mismatch reaches the exit code
                     return _emit_checked(_ic, _hb_ic, size=fsz)
                 print(f"File '{target['name']}' is NON-RESIDENT — its $DATA is stored in on-disk extents held "
                       f"inline in the directory value ({target.get('file_size',0)} bytes). The inline extent map "
@@ -9481,24 +10975,69 @@ def cmd_extract(image, remaining, partition_start):
                   f"{target['stale_name_size']} — the object's own record says "
                   f"{target.get('file_size', 0)}, which is what is extracted.", file=sys.stderr)
         print(f"Extracting '{target['name']}' ({target.get('file_size',0)} bytes):", file=sys.stderr)
+        if not args["no_verify_integrity"]:
+            # A3: this is the branch `big10k.bin` and `small500.bin` actually take. It never called the
+            # verifier, so an integrity stream extracted here carried NO checksum statement at all -- the
+            # constant bug and this missing call site are two independent reasons K009/K010/K011 held.
+            if _integrity_report(_verify_inline_integrity(f, ps, cs, tr, target.get("raw_value", b"")),
+                                 target["name"]):
+                _INTEGRITY_FAILED.append(target["name"])
         sorted_exts = sorted(target["extents"], key=lambda e: e["file_vcn"])
         file_size = target.get("file_size", 0)
         alloc = max(e["file_vcn"] + e["clusters"] for e in sorted_exts) * cs
         if alloc > 4 * 1024 * 1024 * 1024:
             die(f"file allocation size {alloc} bytes exceeds 4 GiB safety limit")
         buf = bytearray(alloc)
+        # K007: `buf[offset:offset + cs] = chunk` with a SHORT chunk does not pad -- Python slice
+        # assignment RESIZES, so a read cut off by the end of the image SHRANK the buffer, every extent
+        # written afterwards landed at a shifted position, and the file came out short (8,192 of 10,240
+        # on the measured case) with the hole accounting computed against the pre-shrink layout. Assign
+        # by the chunk's own length so the buffer keeps its shape; the tail is already zero, which is the
+        # zero-padding the file needs.
+        try:
+            _img_end = os.fstat(f.fileno()).st_size
+        except (OSError, AttributeError):
+            _img_end = None
+        _cut = []                       # (file offset, bytes got, bytes wanted) for reads the image cut short
         for ext in sorted_exts:
+            if _ext_skip_read(ext):
+                continue                               # A1: hole or VLCN 0 -> buf stays zero; never read a cluster
             plcn = ext["plcn"]
             for i in range(ext["clusters"]):
-                f.seek(ps + (plcn + i) * cs)
+                _abs = ps + (plcn + i) * cs
+                f.seek(_abs)
                 chunk = f.read(cs)
                 offset = (ext["file_vcn"] + i) * cs
-                buf[offset:offset + cs] = chunk
-        # E8: signal a short read — the decoded extents cover fewer bytes than the declared file_size.
-        # Emitted to stderr (not an error/exit change) because a legitimately SPARSE file also has
-        # allocation < size; the examiner must decide. Byte output is unchanged (the covered bytes).
+                if len(chunk) < cs and (_img_end is None or _abs + cs > _img_end):
+                    _cut.append((offset, len(chunk), cs))
+                buf[offset:offset + len(chunk)] = chunk     # K007: length-safe; never resizes `buf`
+        # E8 / K007: a shortfall has two different causes and they must not be reported as one. If the
+        # image ENDS inside the file's extents, that is an acquisition/truncation fact about the IMAGE and
+        # the tool can say exactly where; "coverage gap or a sparse file" is a statement about the
+        # VOLUME and was simply wrong on a truncated image.
         written = min(file_size, len(buf))
-        if written < file_size:
+        # B2 (RC2, audit): a range PAST THE END OF THE IMAGE is KNOWN ABSENT -- unlike a sparse-image
+        # hole, which is ambiguous between the file's own zeros and a range never captured. Writing zeros
+        # for it produced output that was byte-for-byte wrong where the real file is non-zero (measured:
+        # 999,424 fabricated bytes on a truncated lab314_main). A label on fabricated bytes does not stop
+        # them being fabricated, so by default the output now ENDS at the last byte the image holds.
+        # `--fill-holes` restores the zero-filled full-length form for a caller who wants it.
+        if _cut and not args.get("fill_holes"):
+            _first_missing = min(o + g for o, g, _w in _cut)
+            if _first_missing < written:
+                del buf[_first_missing:]
+                written = _first_missing
+        if _cut:
+            _lost = sum(w - g for _o, g, w in _cut)
+            _what = ("were zero-filled, not read" if args.get("fill_holes")
+                     else "are NOT in the output: it ends at the last byte this image holds")
+            print(f"[{PROG}] WARNING: the IMAGE ENDS inside '{target['name']}'. {_lost} byte(s) of it are "
+                  f"past the end of this image file ({_img_end} bytes) and {_what}: "
+                  f"first at file offset {_cut[0][0] + _cut[0][1]}. The extents themselves cover the "
+                  f"declared size — this is a truncated image, NOT a coverage gap or a sparse file.",
+                  file=sys.stderr)
+            _SKIP_FINDING.append("extract: image ends inside the file")
+        elif written < file_size:
             print(f"[{PROG}] WARNING: extracted {written} of {file_size} declared bytes for "
                   f"'{target['name']}' — decoded extents cover less than the file size (coverage gap "
                   f"or a sparse file). Verify before relying on the output.", file=sys.stderr)
@@ -9586,7 +11125,7 @@ def _walk_recycle(f, ps, cs, tr, obj_map, dir_oid, sid, depth, out):
     if depth < 0 or dir_oid not in obj_map:
         return
     child_dirs = []; names_here = set(); i_rows = []
-    for kd, vd in walk_bplus(f, ps, cs, tr, obj_map[dir_oid]):
+    for kd, vd in walk_bplus(f, ps, cs, tr, obj_map[dir_oid], oid=dir_oid):
         if len(kd) < 4 or le16(kd, 0) != 0x30:
             continue
         name = kd[4:].decode("utf-16-le", errors="replace").rstrip("\x00")
@@ -9634,7 +11173,7 @@ def cmd_recyclebin(image, remaining, partition_start):
     try:
         recycle_oid = None
         if 0x600 in obj_map:
-            for kd, vd in walk_bplus(f, ps, cs, tr, obj_map[0x600]):
+            for kd, vd in walk_bplus(f, ps, cs, tr, obj_map[0x600], oid=0x600):
                 if len(kd) >= 4 and le16(kd, 0) == 0x30 and len(vd) >= 0x10:
                     if kd[4:].decode("utf-16-le", errors="replace").rstrip("\x00") == "$RECYCLE.BIN":
                         recycle_oid = le64(vd, 0x08); break
@@ -9702,6 +11241,20 @@ def cmd_security(image, remaining, partition_start):
             print(f"ReFS Security Descriptor Hash Audit — {os.path.basename(image)}")
             print("=" * 78)
             print(f"  Descriptors: {len(descriptors)}  (hash-checked: {len(checked)})")
+            # B3/K048: a page the walk could not read yields ZERO descriptors, which is indistinguishable
+            # from a volume that has none. Destroying the SD root page's signature used to print
+            # "Descriptors: 0 ... VERDICT: CLEAN". A count taken over an unreadable tree is not evidence.
+            _dmg = _walk_damage_lines()
+            for _l in _dmg:
+                print(f"  [WARN] security table: {_l}")
+            if _dmg:
+                print("  VERDICT: UNDETERMINED — part of the security table could not be read, so the "
+                      "descriptors above are NOT a complete census and a clean result cannot be claimed.")
+                if failures:
+                    for sd in failures:
+                        print(f"    SecurityId {_hx(sd.get('security_id',0))}: stored {_hx(sd.get('sd_hash',0))} "
+                              f"!= computed {_hx(sd.get('computed_hash',0))}")
+                return 2
             if not failures:
                 print(f"  VERDICT: CLEAN — 0/{len(checked)} descriptors fail the content-addressed hash")
             else:
@@ -9923,7 +11476,7 @@ def _extract_reparse_from_resident(vd):
 def _parse_reparse_index(f, ps, cs, tr, obj_map):
     if 0x540 not in obj_map:
         return [], "OID 0x540 (Reparse Point Index) not found"
-    rows = walk_bplus(f, ps, cs, tr, obj_map[0x540])
+    rows = walk_bplus(f, ps, cs, tr, obj_map[0x540], oid=0x540)
     entries = []
     for kd, vd in rows:
         if len(kd) >= 24:
@@ -9949,7 +11502,7 @@ def _parse_reparse_index(f, ps, cs, tr, obj_map):
 
 def _walk_dir_for_reparse(f, ps, cs, tr, obj_map, oid, path, depth, max_depth):
     if depth > max_depth or oid not in obj_map: return []
-    rows = walk_bplus(f, ps, cs, tr, obj_map[oid])
+    rows = walk_bplus(f, ps, cs, tr, obj_map[oid], oid=oid)
     files = []
     for kd, vd in rows:
         if len(kd) < 4 or le16(kd, 0) != 0x30: continue
@@ -10077,7 +11630,7 @@ def _extract_snapshot_name(key_data):
 
 def _find_snapshot_files(f, ps, cs, tr, obj_map, oid, path, depth, max_depth, results):
     if depth > max_depth or oid not in obj_map: return
-    rows = walk_bplus(f, ps, cs, tr, obj_map[oid])
+    rows = walk_bplus(f, ps, cs, tr, obj_map[oid], oid=oid)
     for kd, vd in rows:
         if len(kd) < 4 or le16(kd, 0) != 0x30: continue
         name = kd[4:].decode("utf-16-le", errors="replace").rstrip("\x00")
@@ -10103,7 +11656,7 @@ def _find_snapshot_files(f, ps, cs, tr, obj_map, oid, path, depth, max_depth, re
 def _get_current_files(f, ps, cs, tr, obj_map, oid=0x600, path="", depth=0, max_depth=10):
     files = set()
     if depth > max_depth or oid not in obj_map: return files
-    for kd, vd in walk_bplus(f, ps, cs, tr, obj_map[oid]):
+    for kd, vd in walk_bplus(f, ps, cs, tr, obj_map[oid], oid=oid):
         if len(kd) < 4 or le16(kd, 0) != 0x30: continue
         name = kd[4:].decode("utf-16-le", errors="replace").rstrip("\x00")
         files.add(name)
@@ -10326,7 +11879,7 @@ def _scan_page_slack_t40(page):
 def _scan_trash_table(f, ps, cs, tr, obj_map):
     if 0xD not in obj_map: return []
     entries = []
-    for kd, vd in walk_bplus(f, ps, cs, tr, obj_map[0xD]):
+    for kd, vd in walk_bplus(f, ps, cs, tr, obj_map[0xD], oid=0xD):
         entry = {"key_len": len(kd), "key_hex": kd.hex(),
                  "value_len": len(vd), "value_hex": vd[:64].hex() if len(vd) > 64 else vd.hex()}
         if len(kd) >= 16: entry["oid"] = le64(kd, 8)
@@ -10552,6 +12105,82 @@ def _slack_recover(f, ps, cs, tr, roots, obj_map, max_scan, log, scan_orphans=Tr
             f"drop --max-scan to scan the whole volume.")
     return entries
 
+def _redundancy_findings(bk):
+    """The rc-AFFECTING redundancy findings in a `_scan_backup_copies` result, as a list of strings.
+
+    A6/K034: `integrity` already classified these correctly, but `summary` printed the very same damage
+    ("— MISSING/DAMAGED") and still exited 0, so a scripted caller reading the exit code was told a
+    volume with a destroyed superblock copy was fine. The rule lives here, once, so the two commands
+    cannot drift apart; `tests/test_redundancy_parity.py` asserts they agree.
+
+    The distinction that matters (B1): a copy that merely DIFFERS is rc-neutral -- the backup boot sector
+    legitimately keeps the pre-upgrade version on an upgraded volume, and both checkpoint copies sharing
+    the top clock is an ambiguity, not corruption. Only a copy that is MISSING, DAMAGED or INVALID counts.
+    """
+    out = []
+    v = bk.get("vbr") or {}
+    vb = v.get("backup")
+    if vb is not None and not vb.get("present"):
+        out.append("backup boot sector missing")
+    for rec in bk.get("checkpoints") or []:
+        if rec.get("clock_divergence"):
+            out.append("checkpoint @ 0x%x clock mismatch: +0x10=%s vs +0x60=%s (possible tampering)"
+                       % (rec.get("lcn", 0), rec.get("vc_page"), rec.get("vc")))
+        if rec.get("role") == "secondary" and not rec.get("cksum_ok") and not rec.get("tied_clock"):
+            out.append("secondary checkpoint @ 0x%x invalid" % rec.get("lcn", 0))
+    # K042: the allocator clock records the log time of the allocator state the checkpoint describes, so
+    # it CANNOT be ahead of the checkpoint's own clock. Nothing checked it -- `refsanalysis chkp --verify`
+    # printed both values one line apart and still reported "17/17 checks passed" over a copy whose
+    # allocator clock was 617 ahead. Measured before the rule was written: over 117 images / 234 copies,
+    # `virtual - allocator` is always between 3 and 31, never zero or negative, so `allocator > virtual`
+    # has no false positive to give.
+    for rec in bk.get("checkpoints") or []:
+        _ac, _vc = rec.get("alloc_clock"), rec.get("vc")
+        if _ac is not None and _vc is not None and _ac > _vc:
+            out.append("checkpoint @ 0x%x: allocator clock %d is AHEAD of the virtual clock %d - the "
+                       "allocator state cannot be newer than the checkpoint describing it, so one of the "
+                       "two was edited" % (rec.get("lcn", 0), _ac, _vc))
+    _cc = [r for r in (bk.get("checkpoints") or [])
+           if r.get("vc") is not None and r.get("alloc_clock") is not None]
+    if len(_cc) == 2:
+        (_a, _b) = _cc
+        if (_a["vc"] > _b["vc"] and _a["alloc_clock"] < _b["alloc_clock"]) or \
+           (_b["vc"] > _a["vc"] and _b["alloc_clock"] < _a["alloc_clock"]):
+            out.append("the checkpoint pair is INVERTED: the copy with the higher virtual clock carries "
+                       "the LOWER allocator clock (0x%x: vc=%d ac=%d vs 0x%x: vc=%d ac=%d)"
+                       % (_a["lcn"], _a["vc"], _a["alloc_clock"], _b["lcn"], _b["vc"], _b["alloc_clock"]))
+    # B7/K052: on a cleanly dismounted volume the checkpoint is the LAST thing written, so the highest
+    # per-object last-write LSN equals the checkpoint's own log position. When objects carry LSNs BEYOND
+    # it, work was done after the last flush -- the volume was not cleanly dismounted. Measured over the
+    # whole corpus before the rule was written: 117 images, and exactly ONE is ahead -- `labFbeforereboot`,
+    # the only uncleanly-detached volume there is. Its recovered twin (`labFafterreboot`) and its own
+    # pre-lab baseline (`labBeforeF`) both come out EQUAL, so the signal tracks the dismount, not the lab.
+    _otl = _OT_MAX_LSN[0] if _OT_MAX_LSN else None
+    _active = next((r for r in (bk.get("checkpoints") or []) if r.get("role") == "PRIMARY"), None)
+    if _otl and _active and _active.get("lsn") and _otl > _active["lsn"]:
+        out.append("the volume was NOT cleanly dismounted: objects carry log positions past the last "
+                   "checkpoint (highest object LSN segment %d offset 0x%x vs checkpoint segment %d "
+                   "offset 0x%x). Work done after the final flush is in the log but not in the "
+                   "checkpoint; a clean dismount leaves the two equal"
+                   % (_otl >> 32, _otl & 0xFFFFFFFF,
+                      _active["lsn"] >> 32, _active["lsn"] & 0xFFFFFFFF))
+    if bk.get("checkpoint_authoritative_unusable"):
+        out.append("the NEWEST checkpoint (the copy the driver would use) failed its self-checksum; the "
+                   "volume's most authoritative structure is damaged")
+    if bk.get("checkpoint_selected_via_fallback"):
+        out.append("the highest-clock checkpoint failed its self-checksum; fell back to the "
+                   "highest-clock copy that passed")
+    for sp in bk.get("supb") or []:
+        if sp.get("damaged"):
+            _what = ("all zeros" if sp.get("all_zero")
+                     else ("signature %s" % sp.get("found_signature") if sp.get("found_signature")
+                           else "unreadable"))
+            out.append("SUPB copy at 0x%x is missing or damaged (%s)" % (sp.get("lcn", 0), _what))
+    if sum(1 for sp in (bk.get("supb") or []) if not sp.get("damaged")) < 2:
+        out.append("fewer than 2 intact SUPB copies located")
+    return out
+
+
 def _scan_backup_copies(f, ps, cs, chkp_lcns):
     """Inventory ReFS redundant copies for resilience: the alternating checkpoint pair, the backup
     boot sector (last LBA), and the secondary SUPB copies near the partition end. Verifies presence
@@ -10564,15 +12193,16 @@ def _scan_backup_copies(f, ps, cs, chkp_lcns):
     pv_ok = pv[3:7] == b"ReFS"
     pv_cksum_ok = pv_ok and (_vbr_checksum(pv, le16(pv, 0x14)) == le16(pv, 0x16))
     total_sectors = le64(pv, 0x18) if len(pv) >= 0x20 else 0
+    sector_size = _vbr_bytes_per_sector(pv)                  # A4
     vbr = {"primary_ok": pv_ok, "primary_cksum_ok": pv_cksum_ok,
-           "total_sectors": total_sectors, "backup": None}
+           "total_sectors": total_sectors, "sector_size": sector_size, "backup": None}
     if total_sectors > 1:
         blba = total_sectors - 1
         try:
-            f.seek(ps + blba * 512); bv = f.read(512)
+            f.seek(ps + blba * sector_size); bv = f.read(512)
             bv_ok = len(bv) == 512 and bv[3:7] == b"ReFS"
             vbr["backup"] = {
-                "lba": blba,
+                "lba": blba, "byte_offset": ps + blba * sector_size,
                 "present": bv_ok,
                 "matches_primary": bv == pv,
                 "sha256": hashlib.sha256(bv).hexdigest() if bv_ok else None,
@@ -10586,16 +12216,27 @@ def _scan_backup_copies(f, ps, cs, chkp_lcns):
             vbr["backup"] = {"lba": blba, "present": False, "error": True}
     out["vbr"] = vbr
 
-    # --- Checkpoint copies (SUPB references the pair; newest virtual clock = current) ---
-    best_vc = -1
+    # --- Checkpoint copies (SUPB references the pair; the ACTIVE copy is the one the driver would pick) ---
+    # B2 (K037/K038/K036/K043): the driver's ChooseCheckpointRecord<0> compares the clock at CHKP+0x60
+    # (NOT the page-header clock at +0x10 the tool used), returns a DISTINCT tie sentinel when the two
+    # are equal (it does not silently pick a winner), and selection is meaningful only among copies that
+    # pass their own self-checksum. So: read +0x60 as the selection clock (keeping +0x10 as `vc_page` to
+    # expose a tamper that moved one but not the other); prefer checksum-VALID copies; on a tie at the top
+    # clock, choose deterministically (lowest LCN) but mark BOTH as tied and note it; if the highest-clock
+    # copy is invalid, fall back to the highest-clock valid copy and say so.
     for cl in chkp_lcns:
         rec = {"lcn": cl, "sig_ok": False, "vc": None, "roots_ok": False}
         try:
-            f.seek(ps + cl * cs); raw = f.read(4 * cs)
+            f.seek(ps + cl * cs); raw = f.read(_page_bytes(cs))   # N52
             rec["sig_ok"] = raw[:4] == b"CHKP"
             if rec["sig_ok"]:
                 rec["sha256"] = hashlib.sha256(raw).hexdigest()
-                rec["vc"] = le64(raw, 0x10)
+                rec["vc"] = le64(raw, 0x60)                       # K037: the driver's selection clock
+                rec["vc_page"] = le64(raw, 0x10)                  # page-header clock; a divergence = tamper
+                rec["alloc_clock"] = le64(raw, 0x68)              # K042: allocator state's own log time
+                # K104/E104: the Object-Table value+0x18 that this is compared against is a per-object
+                # LSN, not the checkpoint virtual clock the docs used to call it.
+                rec["lsn"] = le64(raw, 0x70)                      # B7: log position this copy was flushed to
                 rec["self_lcn"] = le64(raw, 0x20)                 # page self-address (should equal its own LCN)
                 rec["self_lcn_ok"] = (rec["self_lcn"] == cl)
                 rec["cksum_ok"], rec["ckname"] = _verify_self_checksum(raw, cs)   # B3
@@ -10604,15 +12245,39 @@ def _scan_backup_copies(f, ps, cs, chkp_lcns):
                     rec["roots_ok"] = bool(roots) and any(roots)
                 except Exception:
                     rec["roots_ok"] = False
-                if rec["vc"] > best_vc:
-                    best_vc = rec["vc"]
         except (OSError, OverflowError):
             rec["error"] = True
         out["checkpoints"].append(rec)
+    # selection among checksum-VALID copies; fall back to all sig-ok copies only if none is valid
+    # A1/K035: "primary" names the AUTHORITATIVE copy -- the newest clock, i.e. the one the driver would
+    # choose -- NOT whichever copy this tool managed to use. Ranking by usability instead relabelled a
+    # CORRUPTED newest checkpoint as "secondary" and promoted the older copy to "primary", so a volume
+    # whose authoritative structure was destroyed printed the same shape as a healthy one with a bad spare.
+    # Label by authority; report usability separately (`cksum_ok` on the line, and the fallback below).
+    _cands = [r for r in out["checkpoints"] if r.get("vc") is not None]
+    # `cksum_ok is None` = no algorithm we can verify, NOT a failure -- do not treat it as invalid.
+    _valid = [r for r in _cands if r.get("cksum_ok") is not False]
+    best_vc = max((r["vc"] for r in _cands), default=-1)
+    _top = [r for r in _cands if r.get("vc") == best_vc and best_vc >= 0]
+    _tie = len(_top) > 1
+    _active = min(_top, key=lambda r: r["lcn"]) if _top else None   # deterministic tie-break
+    # the copy actually usable for a bootstrap: newest among those that pass their own self-checksum
+    _usable_top = max(_valid, key=lambda r: (r["vc"], -r["lcn"])) if _valid else None
+    _fellback = (_active is not None and _usable_top is not None
+                 and _active["lcn"] != _usable_top["lcn"])   # authoritative copy is NOT the one usable
+    out["checkpoint_authoritative_unusable"] = bool(_active is not None and _active.get("cksum_ok") is False)
+    out["checkpoint_used_lcn"] = _usable_top["lcn"] if _usable_top else None
     for rec in out["checkpoints"]:
-        # B5: the older checkpoint slot is the SECONDARY (previous consistent state / rollback target),
-        # not a "backup" — the two CHKP slots are symmetric alternating (ping-pong) slots.
-        rec["role"] = ("PRIMARY" if rec.get("vc") == best_vc and best_vc >= 0 else "secondary")
+        if rec is _active:
+            rec["role"] = "PRIMARY"
+        else:
+            rec["role"] = "secondary"
+        rec["tied_clock"] = bool(_tie and rec.get("vc") == best_vc and best_vc >= 0)
+        rec["clock_divergence"] = (rec.get("vc_page") is not None
+                                   and rec.get("vc") is not None
+                                   and rec["vc_page"] != rec["vc"])
+    out["checkpoint_tie"] = _tie
+    out["checkpoint_selected_via_fallback"] = _fellback
 
     # --- Secondary SUPB copies (primary @ SUPB_LCN; copies sit near the partition end) ---
     f.seek(ps + SUPB_LCN * cs); _psupb = f.read(cs)
@@ -10623,12 +12288,21 @@ def _scan_backup_copies(f, ps, cs, chkp_lcns):
                         "self_lcn_ok": (le64(_psupb, 0x20) == SUPB_LCN) if _psupb[:4] == b"SUPB" else None,
                         "sha256": hashlib.sha256(_psupb).hexdigest() if _psupb[:4] == b"SUPB" else None})
     if total_sectors > 1:
-        end_lcn = (total_sectors * 512) // cs
+        end_lcn = (total_sectors * sector_size) // cs        # A4
+        # B3/K032: the copies were located by scanning the last 64 clusters for the literal signature, so a
+        # copy whose signature was destroyed produced NO ENTRY AT ALL -- it read as "this volume has fewer
+        # copies", not as "a copy is damaged", and the only warning was `n_supb < 2`. Measured over the
+        # whole corpus, the two secondary copies sit at end_lcn-3 and end_lcn-2 on 102 of 102 ReFS volumes
+        # (every cluster size, every version, 2 GB to 2 TB), so those slots are checked BY ADDRESS and a
+        # slot that does not carry the signature is reported as a DAMAGED copy at a known location.
+        _expected = [end_lcn - 3, end_lcn - 2]
+        _seen = set()
         for lcn in range(max(0, end_lcn - 64), end_lcn):
             try:
                 f.seek(ps + lcn * cs); _s = f.read(cs)
                 if _s[:4] == b"SUPB":
                     _bck = _verify_self_checksum(_s, cs)
+                    _seen.add(lcn)
                     out["supb"].append({"lcn": lcn, "role": "backup", "ok": True,
                                         "cksum_ok": _bck[0], "ckname": _bck[1],
                                         "self_lcn": le64(_s, 0x20), "self_lcn_ok": (le64(_s, 0x20) == lcn),
@@ -10636,7 +12310,48 @@ def _scan_backup_copies(f, ps, cs, chkp_lcns):
             except (OSError, OverflowError) as _e:
                 _skip_note("_scan_backup_copies", "a backup copy", _e)
                 break
+        for _lcn in _expected:
+            if _lcn < 0 or _lcn in _seen:
+                continue
+            try:
+                f.seek(ps + _lcn * cs); _s = f.read(cs)
+                _sig = _s[:4]
+            except (OSError, OverflowError):
+                _sig = None
+            out["supb"].append({"lcn": _lcn, "role": "backup", "ok": False, "damaged": True,
+                                "cksum_ok": False, "ckname": "-",
+                                "self_lcn": None, "self_lcn_ok": None, "sha256": None,
+                                "found_signature": (_sig.hex() if _sig else None),
+                                "all_zero": (_sig is not None and not any(_s))})
     return out
+
+def _page_in_image_hole(f, ps, cs, slots, use_tr):
+    """True iff EVERY cluster of this page lies in a sparse hole of the image file -- i.e. the bytes
+    read back as zeros because the acquisition never captured them, not because the page was tampered.
+    Own fd, read-only. Unknown (SEEK_DATA unsupported) is treated as NOT-a-hole, so an all-zero page is
+    reported as a finding rather than silently excused. (K187 / A9 use the same distinction.)"""
+    name = getattr(f, "name", None)
+    if not isinstance(name, str):
+        return False
+    try:
+        fd = os.open(name, os.O_RDONLY)
+    except OSError:
+        return False
+    try:
+        for sl in slots:
+            if sl in (0, 0xFFFFFFFFFFFFFFFF):
+                break
+            plcn = (use_tr.tr(sl) if use_tr else sl)
+            if plcn is None or plcn < 0:
+                return False
+            start = ps + plcn * cs
+            hb = _hole_bytes_in(fd, start, start + cs)
+            if hb is None or hb < cs:           # unknown, or any real data in the range -> not a hole
+                return False
+        return True
+    finally:
+        os.close(fd)
+
 
 def _read_full_page(f, ps, cs, slots, use_tr):
     """Read a full metadata page = concatenation of its page-reference LCN slots.
@@ -10787,7 +12502,7 @@ def _verify_page_checksums(f, ps, cs, tr, chk, dl, root_count, max_pages=300000,
     import hashlib
     st = {"crc64_ok": 0, "crc64_bad": 0, "sha_ok": 0, "sha_bad": 0,
           "none": 0, "pages": 0, "objects": 0, "capped": False, "mismatches": [],
-          "unreadable": 0}
+          "unreadable": 0, "absent": 0}
     visited = set()
 
     def verify_ref(rec, use_tr, is_ot=False, depth=0):
@@ -10810,16 +12525,35 @@ def _verify_page_checksums(f, ps, cs, tr, chk, dl, root_count, max_pages=300000,
         if pg is None:                      # could not READ it -- not the same as "not a B+ page"
             st["unreadable"] += 1
             return
-        if pg[:4] != b"MSB+":
-            return
-        st["pages"] += 1
-        # 5integrity-2: locate a mismatched page physically — VLCN, its PLCN (post container
-        # translation), the container id it lives in, and the on-image byte offset. Computed only
-        # on a mismatch (rare) so it adds no per-page cost / no extra translator miss-counting.
+
         def _loc():
             if use_tr is not None:
                 return use_tr.tr(slots[0]), (slots[0] >> use_tr.shift)
-            return slots[0], None                     # physical LCN (CT roots) — no container map
+            return slots[0], None            # physical LCN (CT roots) -- no container map
+
+        if pg[:4] != b"MSB+":
+            # K187: the parent reference vouches for this page with a digest (cktype 2/4). A page that
+            # reads back as NOT a valid node cannot match that digest -- returning here counted it as
+            # nothing and let the verdict say "all N pages VERIFIED - no tampering/corruption" over a
+            # zeroed page. A page that is entirely zero AND sits in an image HOLE is an acquisition gap
+            # (`absent`), not tampering -- distinguished the way A9 does. A checksummed page that is
+            # neither is a mismatch. (On a None-checksum volume, cktype 0, there is no digest to fail;
+            # the structural page walk catches a bad signature there.) Either way we cannot recurse.
+            if not any(pg) and _page_in_image_hole(f, ps, cs, slots, use_tr):
+                st["absent"] += 1
+            elif cktype in (2, 4):
+                st["pages"] += 1
+                _plcn, _cont = _loc()
+                if cktype == 2:
+                    st["crc64_bad"] += 1
+                else:
+                    st["sha_bad"] += 1
+                st["mismatches"].append((slots[0], _plcn, _cont, "CRC64" if cktype == 2 else "SHA256",
+                                         "not-a-node", "sig=" + pg[:4].hex()))
+            else:
+                st["none"] += 1
+            return
+        st["pages"] += 1
         if cktype == 2:
             stored = le64(rec, 0x28)
             calc = refs_crc64(pg)
@@ -10888,6 +12622,25 @@ def _verify_page_checksums(f, ps, cs, tr, chk, dl, root_count, max_pages=300000,
         # full=False stops at the system root tables; full=True crosses the OT (root 0) into objects
         verify_ref(chk[ro:ro + dl], use_tr, is_ot=(idx == 0 and full))
     return st
+
+def _vbr_bytes_per_sector(vbr):
+    """A4. The VBR's own sector size, u16 at +0x20. `total_sectors` at +0x18 counts THESE sectors, not
+    512-byte LBAs -- six sites multiplied it by a hard-coded 512 instead, which is invisible on a 512e
+    volume (bps == 512) and wrong by 8x on a 4Kn one.
+
+    Measured on `lab314_4kn` (bps 4096, total_sectors 1,032,192): the backup boot sector was read at
+    `ps + 1032191*512 = 0x207ffe00` -- garbage, half a gigabyte into a 4 GB image -- and reported
+    "MISSING/unreadable", while a valid ReFS VBR byte-identical to the primary sits at
+    `ps + 1032191*4096 = 0xfcfff000`. The same constant bounded the SUPB backup search at
+    `end_lcn = 129,024` while the real backup superblocks are at LCN 1,032,189 and 1,032,190, so the
+    tool reported "Superblock copies: 1" and warned "fewer than 2 SUPB copies located" on a volume that
+    physically carries three. Both warnings on that healthy volume were false, from this one constant.
+
+    Falls back to 512 when the field is absent or implausible -- a volume whose VBR cannot be read at
+    all is already handled by the caller's `primary_ok` test."""
+    bps = le16(vbr, 0x20) if len(vbr) >= 0x22 else 0
+    return bps if bps in (512, 1024, 2048, 4096) else 512
+
 
 def _vbr_checksum(sector, vbr_size):
     checksum = 0
@@ -11226,7 +12979,7 @@ def _extent_backed_carveable(vd, ctx=None):
     yields a non-empty on-disk extent list (the exact predicate `_carve_extent_backed` uses). On a truncated
     slack remnant the disk_alloc field survives but the extent table is zeroed (ecount==0), so only metadata
     is recoverable and the 'extent_backed / --carve' promise would produce no file."""
-    for k, v in parse_resident_btree_rows(vd, ctx):
+    for k, v in parse_resident_btree_rows(vd, ctx, salvage=True):   # K005: a deleted remnant's header count is decremented; the slots below still address the rows
         if (len(k) >= 0x18 and k[12] == 0x80 and k[13] == 0x00 and le64(k, 0x10) == 0x1000
                 and len(v) >= 0x50 and le32(v, 4) == SNAP_DATA_DESC):
             stream_size, disk_alloc, exts = parse_snapshot_data_entry(v)
@@ -11264,7 +13017,7 @@ def _deleted_recoverability(e, cs=None, tr=None):
         if e.get("t40_extent_count", 0) > 0:        # extents recovered from a type-0x40 backing in slack
             return ("extent_backed", _T40_CARVE_LABEL, None)
         return ("metadata_only", _RECOVER_LABEL["metadata_only"], None)
-    decoded = get_resident_data_content(vd)
+    decoded = get_resident_data_content(vd, salvage=True)   # K005: this vd is a deleted REMNANT
     if decoded is not None and len(decoded) > 0 and not any(decoded):
         # The descriptor survived the deletion but its inline data region did not: every declared byte is
         # zero. Returning these as recovered content would emit bytes the remnant does not hold -- measured
@@ -11288,7 +13041,7 @@ def _deleted_recoverability(e, cs=None, tr=None):
         return ("recoverable_inline", label, decoded)
     # long value, not inline => NON-RESIDENT. If its current stream is extent-backed (F5) the extent list is
     # in this remnant -> carve candidate; otherwise only metadata survives.
-    if _current_stream_extent_backed(vd):
+    if _current_stream_extent_backed(vd, salvage=True):     # K005: deleted REMNANT
         if _extent_backed_carveable(vd):
             return ("extent_backed", _RECOVER_LABEL["extent_backed"], None)
         if e.get("t40_extent_count", 0) > 0:                             # extents in a slack type-0x40 backing
@@ -11340,8 +13093,18 @@ def _guarded_extract_write(dest, data, failures, holes_mark=None, what=None):
     recorded a hole since then, these bytes came from one: the stream is recorded for the sidecar, and
     under `--refuse-holes` it is not written at all (returning None, exactly as a failed write does, but
     WITHOUT being counted as a failure -- it is a deliberate refusal and is reported as one)."""
-    if holes_mark is not None and len(_CONTENT_HOLES) > holes_mark:
-        drew = sum(b for _w, b in _CONTENT_HOLES[holes_mark:])
+    _hm, _um = holes_mark if isinstance(holes_mark, tuple) else (holes_mark, None)
+    if _um is not None and len(_CONTENT_UNDET) > _um:
+        # K018: coverage UNKNOWN for these bytes. Under --refuse-holes this must refuse exactly as a
+        # known hole does -- the flag means "do not hand me bytes I cannot vouch for", and bytes whose
+        # provenance could not be checked are the clearest case of that.
+        _UNDET_STREAMS.append({"file": dest, "what": what or os.path.basename(dest),
+                               "reason": "hole coverage could not be determined on this host"})
+        if _REFUSE_HOLES:
+            _HOLE_REFUSALS.append(dest)
+            return None
+    if _hm is not None and len(_CONTENT_HOLES) > _hm:
+        drew = sum(b for _w, b in _CONTENT_HOLES[_hm:])
         _HOLE_STREAMS.append({"file": dest, "what": what or os.path.basename(dest), "hole_bytes": drew})
         # `file` is rewritten relative to the export directory by _bulk_hole_finish: an absolute path is
         # wrong the moment the examiner moves or ships the directory.
@@ -11386,7 +13149,7 @@ def _carve_extent_backed(f, ps_off, cs, tr, vd, t40_backing=None, _carve_what=No
     cmd_extract's fvcn placement/trim (proven on win11refs2tsnapshots arg.txt current stream, byte-exact)."""
     # (1) inline current-stream holder (sub_id 0x1000)
     holder = None
-    for k, v in parse_resident_btree_rows(vd, (f, ps_off, cs, tr)):
+    for k, v in parse_resident_btree_rows(vd, (f, ps_off, cs, tr), salvage=True):   # K005: same - the carve path must see rows the header has forgotten
         if (len(k) >= 0x18 and k[12] == 0x80 and k[13] == 0x00 and le64(k, 0x10) == 0x1000
                 and len(v) >= 0x50 and le32(v, 4) == SNAP_DATA_DESC):
             holder = v
@@ -11424,6 +13187,8 @@ def _carve_extent_backed(f, ps_off, cs, tr, vd, t40_backing=None, _carve_what=No
                 return None
             buf = bytearray(alloc); _cruns = []
             for x in exts:
+                if _ext_skip_read(x):
+                    continue                        # A1: hole or VLCN 0 -> leave zero-filled
                 plcn, fvcn, run = x["plcn"], x["file_vcn"], x["clusters"]
                 for j in range(run):
                     o = (fvcn + j) * cs
@@ -11446,8 +13211,8 @@ def _carve_extent_backed(f, ps_off, cs, tr, vd, t40_backing=None, _carve_what=No
             buf = bytearray(alloc); _cruns = []
             got = 0
             for x in sorted(exts, key=lambda x: x["file_vcn"]):
-                if x.get("vlcn", x["plcn"]) == 0:
-                    continue                        # sparse hole -> leave zero-filled (never read boot region)
+                if _ext_skip_read(x):
+                    continue                        # A1: hole or VLCN 0 -> leave zero-filled (never read boot region)
                 plcn, fvcn, run = x["plcn"], x["file_vcn"], x["clusters"]
                 for j in range(run):
                     _cruns.append((plcn + j, 1, (fvcn + j) * cs))
@@ -11638,7 +13403,7 @@ def cmd_deleted(image, remaining, partition_start):
         if no_system and _deleted_category(name) == "system":
             return
         os.makedirs(extract_dir, exist_ok=True)
-        _hm_dec = len(_CONTENT_HOLES)
+        _hm_dec = _hole_mark()          # K018
         venum, vlabel, decoded = _deleted_recoverability(e, cs, tr)
         prov = os.path.basename(base)                    # historical provenance name (…_c<plcn>o<off>)
         safe = _safe_filename(name)
@@ -11651,7 +13416,7 @@ def cmd_deleted(image, remaining, partition_start):
                                                   holes_mark=_hm_dec,
                                                   what=f"deleted file '{name}'")   # audit 4.1
         elif write_content and carve and venum == "extent_backed":   # NON-RESIDENT — carve from the extent map
-            _hm_carve = len(_CONTENT_HOLES)
+            _hm_carve = _hole_mark()    # K018
             cres = _carve_extent_backed(f, ps, cs, tr, vd, e.get("t40_backing"),
                                         _carve_what=f"carved '{e.get('name') or e.get('path') or '?'}'")
             if cres:
@@ -12234,10 +13999,18 @@ def cmd_snapshots(image, remaining, partition_start):
                     print(f"\n    Recovered content ({len(recs)} version(s)):")
                 for rec in recs:
                     content = rec["content"]
+                    # K026: a version that DECLARES extents or a size but resolves to zero bytes is
+                    # UNRESOLVED, not empty. "0 bytes, 8 extent(s)" reads like a measurement of the
+                    # content; it is a measurement of the failure to find it.
+                    _unresolved = (content is not None and not content
+                                   and (rec.get("n_extents") or rec.get("stream_size")))
                     if rec["inline"]:
                         status = "inline (in 0x30 body — current version)"
                     elif content is None:
                         status = "no DATA extent"
+                    elif _unresolved:
+                        status = (f"UNRESOLVED — {rec['n_extents']} extent(s) declared and "
+                                  f"stream_size={rec['stream_size']}, but no bytes could be resolved")
                     else:
                         status = f"{len(content)} bytes, {rec['n_extents']} extent(s)"
                     print(f"      [{rec['name']}] sub_id=0x{rec['sub_id']:x} "
@@ -12250,7 +14023,23 @@ def cmd_snapshots(image, remaining, partition_start):
                         except UnicodeDecodeError:
                             shown = preview.hex()
                         print(f"          {shown!r}")
-                    if content is not None and extract_dir:
+                    if _unresolved and extract_dir:
+                        # K026: writing this produced a 0-BYTE FILE under the version's name, reported as
+                        # a successful extraction, with nothing in the failures list and no warning. On
+                        # disk that artifact is indistinguishable from a version whose content really was
+                        # empty -- the strongest possible wrong statement about recovered evidence.
+                        print(f"[{PROG}] WARNING: snapshot version '{rec['name']}' "
+                              f"(0x{rec['sub_id']:x}) of '{r['path']}' declares {rec['n_extents']} "
+                              f"extent(s) and stream_size={rec['stream_size']} but resolved to NO bytes; "
+                              f"it was NOT written. A 0-byte file here would be indistinguishable from a "
+                              f"version that was genuinely empty.", file=sys.stderr)
+                        _snap_failures.append({
+                            "path": os.path.join(extract_dir, _safe_filename(
+                                r["path"].strip("/").replace("/", "_") + "__" + rec["name"])),
+                            "name": rec["name"],
+                            "error": "version unresolved: %d extent(s), stream_size=%d, 0 bytes resolved"
+                                     % (rec["n_extents"], rec["stream_size"])})
+                    elif content is not None and extract_dir:
                         safe = (r["path"].strip("/").replace("/", "_") + "__" + rec["name"])
                         safe = _safe_filename(safe)   # faithful (no truncation) component sanitizer
                         os.makedirs(extract_dir, exist_ok=True)
@@ -12351,6 +14140,44 @@ def verify_page_references(f, ps, cs, tr, roots, limit=None):
     return out
 
 
+def _verify_volume_integrity_streams(f, ps, cs, tr, obj_map):
+    """Verify EVERY file's ReFS integrity stream (per-cluster CRC-32C) across the volume.
+
+    B2/K071. `integrity --checksums` verified metadata PAGES only, so a volume whose file DATA had been
+    tampered with — the case ReFS integrity streams exist to detect — reported "no tampering/corruption".
+    `extract` already verified the stream for the one file it was extracting (E99 fixed the row-size test
+    that had left every extent of two or more clusters unchecked); this applies the same verifier to the
+    whole volume, which is what a reader running a command called `integrity` is asking for.
+
+    Returns {'files': n_with_streams, 'checked': clusters, 'ok': int, 'bad': int, 'unreadable': int,
+    'offenders': [(path, bad, checked), ...]} or None when nothing on the volume carries a stream.
+    """
+    out = {"files": 0, "checked": 0, "ok": 0, "bad": 0, "unreadable": 0, "offenders": []}
+    del _INTEGRITY_VD_CAPTURE[:]
+    _CAPTURE_INTEGRITY_VD.append(True)
+    try:
+        walk_directory_tree(f, ps, cs, tr, obj_map, 0x600, DEFAULT_DEPTH, False, set())
+    except Exception as _e:
+        _skip_note("integrity streams", "the walk for integrity-stream files", _e)
+    finally:
+        del _CAPTURE_INTEGRITY_VD[:]
+    for path, vd in _INTEGRITY_VD_CAPTURE:
+        try:
+            iv = _verify_inline_integrity(f, ps, cs, tr, vd)
+        except Exception as _e:
+            _skip_note("integrity streams", "one file's integrity stream", _e)
+            continue
+        if iv is None:
+            continue
+        out["files"] += 1
+        out["checked"] += iv["checked"]; out["ok"] += iv["ok"]
+        out["bad"] += iv["bad_count"]; out["unreadable"] += iv.get("rows_unreadable", 0) or 0
+        if iv["bad_count"]:
+            out["offenders"].append((path, iv["bad_count"], iv["checked"]))
+    del _INTEGRITY_VD_CAPTURE[:]
+    return out if out["files"] else None
+
+
 def cmd_integrity(image, remaining, partition_start):
     # integrity is a multi-section diagnostic REPORT, not a record list — only --json applies (a structured
     # report object); --csv/--jsonl are not offered. The human text is captured and replaced by the object.
@@ -12374,16 +14201,20 @@ def cmd_integrity(image, remaining, partition_start):
             import io as _io
             sys.stdout = _io.StringIO()
         # Get volume sig and VC from CHKP
-        best_vc = 0; best_volsig = 0; chk_type = 0; best_chk = None
+        best_vc = -1; best_volsig = 0; chk_type = 0; best_chk = None; best_lcn = None
         for cl in chkp_lcns:
             try:
-                f.seek(ps + cl * cs); raw = f.read(4 * cs)
+                f.seek(ps + cl * cs); raw = f.read(_page_bytes(cs))   # N52
                 if raw[:4] == b"CHKP":
-                    vc = le64(raw, 0x10)
-                    if vc >= best_vc:
-                        best_vc = vc; best_volsig = le32(raw, 0x0C); best_chk = raw
+                    vc = le64(raw, 0x60)                       # B2/K037: the driver's selection clock (+0x60)
+                    # highest clock wins; on a tie, lowest LCN (same rule as the redundancy scanner, so the
+                    # copy whose pages are checksum-walked is the copy labelled PRIMARY there).
+                    if vc > best_vc or (vc == best_vc and (best_lcn is None or cl < best_lcn)):
+                        best_vc = vc; best_volsig = le32(raw, 0x0C); best_chk = raw; best_lcn = cl
             except Exception as _e:
                 _skip_note("cmd_integrity", "a page checksum", _e)
+        if best_vc < 0:
+            best_vc = 0
         f.seek(ps); bs = f.read(512)
         chk_type = le16(bs, 0x2A)
         chk_types = {0: "None", 2: "CRC64", 4: "SHA-256"}
@@ -12427,6 +14258,11 @@ def cmd_integrity(image, remaining, partition_start):
                 _skip_note("cmd_integrity", "a page checksum", _e)
 
         print("=" * 78)
+        # B2/K071: computed HERE, before the page-checksum verdict prints, because that verdict must not
+        # claim "no tampering/corruption" on a volume whose file data has already failed its own CRC-32C.
+        # The section itself is printed further down, in report order.
+        _ist = _verify_volume_integrity_streams(f, ps, cs, tr, obj_map) if do_checksums else None
+        istream_bad = _ist["bad"] if _ist else 0
         print("ReFS Metadata Integrity Report")
         print("=" * 78)
         print(f"  Image:           {image}")
@@ -12467,11 +14303,22 @@ def cmd_integrity(image, remaining, partition_start):
         print("-" * 78)
         if _pr is None:
             print("  not checked — add `--checksums` (one 4-cluster read per object; ~27,000 on a real volume)")
+            # A9: say that the OTHER half exists. This section covers the Object-Table references, which
+            # bind each object's ROOT page; the references INSIDE the tree, which bind every child page,
+            # are checked on the read path by `--verify-pages`. Neither is on by default, and neither is
+            # implied by anything else the tool prints.
+            print("  child pages inside the tree are a separate check: add `--verify-pages` to any command")
+            print("  to verify each metadata page it reads against its parent's digest (3-6x slower)")
         elif not _pr["checked"]:
             print("  no Object-Table page references could be read")
         else:
             _algs = "/".join(_pr["algorithms"]) or "-"
             print(f"  Verified:                {_pr['verified']} of {_pr['checked']}  ({_algs})")
+            if _pr["failed"]:
+                # B1/K030: this number used to be printed and read nowhere else, so the verdict below
+                # certified "no tampering" over it. It is a finding, and the verdict reads findings.
+                _finding("page-reference mismatch",
+                         "%d metadata page(s) differ from the digest their parent recorded" % _pr["failed"])
             print(f"  Mismatched:              {_pr['failed']}"
                   + ("   <-- the page differs from what the parent recorded" if _pr["failed"] else ""))
             print(f"  Absent from this image:  {_pr['absent']}"
@@ -12514,6 +14361,11 @@ def cmd_integrity(image, remaining, partition_start):
                 # was pronounced over a volume that had not been fully read.
                 print(f"  UNREADABLE pages:        {ck_stats['unreadable']} "
                       f"(not checked — see the warnings above)")
+            if ck_stats.get("absent"):
+                # K187: a referenced page that reads as all-zeros inside an image hole is an acquisition
+                # gap, not tampering — surfaced, but kept out of the mismatch tally.
+                print(f"  Absent (image holes):    {ck_stats['absent']} "
+                      f"(referenced page reads as all zeros in an image hole — acquisition gap)")
             if ck_stats.get("capped"):
                 print(f"  NOTE: page cap ({max_pages}) reached — coverage truncated; "
                       f"rerun with --max-pages N for full fidelity")
@@ -12527,15 +14379,67 @@ def cmd_integrity(image, remaining, partition_start):
             elif ck_stats.get("unreadable"):
                 print(f"  VERDICT: the {tot_ok} checksummed pages that COULD be read VERIFIED — "
                       f"{ck_stats['unreadable']} page(s) were unreadable and are NOT covered")
+            elif ck_stats.get("absent"):
+                print(f"  VERDICT: the {tot_ok} checksummed pages present VERIFIED; {ck_stats['absent']} "
+                      f"referenced page(s) are absent from this image (acquisition gap) and are NOT covered")
+            elif ck_stats.get("capped"):
+                print(f"  VERDICT: the {tot_ok} checksummed pages read so far VERIFIED — but the page cap "
+                      f"was reached, so this is NOT the whole metadata tree (rerun with --max-pages N)")
+            # A1/K035: this sub-verdict speaks ONLY for the page CONTENTS it checksummed, and it printed
+            # "no tampering/corruption" -- a claim about the whole volume -- on a volume whose newest
+            # checkpoint had just failed its own self-checksum. Where the bootstrap chain is known to be
+            # damaged (detected during bootstrap, before this point) the claim is scoped to what was
+            # actually measured; on a volume with no such finding the plain wording is correct and kept.
+            elif _CHKP_STALE or istream_bad:
+                _why = ("the bootstrap chain is damaged" if _CHKP_STALE else
+                        "%d file-data cluster(s) FAILED their integrity-stream CRC-32C" % istream_bad)
+                print(f"  VERDICT: all {tot_ok} checksummed metadata pages VERIFIED — the PAGES are "
+                      f"intact, but {_why} (see below), so this is NOT a clean bill of health for the "
+                      f"volume")
+            elif _findings("page-reference mismatch"):
+                print(f"  VERDICT: the {tot_ok} page CHECKSUMS verified, but "
+                      f"{'; '.join(_findings('page-reference mismatch'))} — a page whose content no longer "
+                      f"matches its parent's digest has been ALTERED since that digest was written. This is "
+                      f"NOT a clean bill of health.")
             else:
                 print(f"  VERDICT: all {tot_ok} checksummed pages VERIFIED — no tampering/corruption")
+            print()
+
+        # B2/K071: ReFS integrity streams are per-file data CRC-32C, and they are the mechanism the
+        # volume has for detecting tampering with file CONTENT. Verifying only metadata pages meant a
+        # volume whose file data had been altered reported "no tampering/corruption" from a command
+        # called `integrity`. Gated on --checksums because it re-reads the protected file data.
+        if do_checksums:
+            print("-" * 78)
+            print("Integrity Streams (per-file data CRC-32C)")
+            print("-" * 78)
+            if _ist is None:
+                print("  No file on this volume carries an integrity stream — nothing to verify.")
+            else:
+                istream_bad = _ist["bad"]
+                print("  Files with a stream:     %d" % _ist["files"])
+                print("  Clusters verified:       %d (%d OK, %d FAILED)"
+                      % (_ist["checked"], _ist["ok"], _ist["bad"]))
+                if _ist["unreadable"]:
+                    print("  Clusters unreadable:     %d — NOT covered by the result above" % _ist["unreadable"])
+                if _ist["bad"]:
+                    print("  INTEGRITY STREAM MISMATCH — the volume's own per-cluster CRC-32C says these")
+                    print("  files' data is NOT what was written (corruption or tampering):")
+                    for _pth, _bad, _tot in _ist["offenders"][:10]:
+                        print("      %-52s %d of %d clusters FAILED" % (_pth[:52], _bad, _tot))
+                    if len(_ist["offenders"]) > 10:
+                        print("      ... and %d more file(s)" % (len(_ist["offenders"]) - 10))
+                else:
+                    print("  VERDICT: every checksummed file cluster matches its stored CRC-32C.")
             print()
 
         # Redundancy inventory: ReFS keeps a backup boot sector (last LBA), an alternating
         # checkpoint pair, and secondary SUPB copies. Verify they are present + valid so a future
         # recovery mode could fall back to a backup if the primary is corrupt.
         bk = _scan_backup_copies(f, ps, cs, chkp_lcns)
-        backup_warn = []
+        backup_warn = []      # B1: redundancy FINDINGS -> has_warn/rc (a copy MISSING or INVALID)
+        backup_note = []      # B1: rc-NEUTRAL observations (a copy that merely DIFFERS -- normal after an
+                              # upgrade, where the backup boot sector keeps the pre-upgrade version)
         print("-" * 78)
         print("Redundancy / Backup Copies")
         print("-" * 78)
@@ -12555,42 +14459,108 @@ def cmd_integrity(image, remaining, partition_start):
                           f"(the backup keeps the ORIGINAL pre-upgrade version) or VBR tampering.")
                     print("        The driver does NOT reconcile the two copies (no cross-copy "
                           "checksum/clock); the backup is consulted only if the primary fails to READ.")
-                    backup_warn.append(f"boot-sector version differs: primary v{pvr} vs backup v{bvr}")
+                    backup_note.append(f"boot-sector version differs: primary v{pvr} vs backup v{bvr} "
+                                       f"(normal after an upgrade; the backup keeps the birth version)")
                 else:
-                    backup_warn.append("backup boot sector differs from primary")
+                    backup_note.append("backup boot sector differs from primary")
         else:
             print(f"  Boot sector (backup):    LBA {v['backup'].get('lba','?')} — MISSING/unreadable")
             backup_warn.append("backup boot sector missing")
         for rec in bk["checkpoints"]:
             vc = rec.get("vc")
             status = "checksum OK" if rec.get("cksum_ok") else ("valid" if (rec["sig_ok"] and rec["roots_ok"]) else "INVALID")
+            _tag = " (tied clock)" if rec.get("tied_clock") else ""
             print(f"  Checkpoint [{rec['role']:9}]:   LCN {_hx(rec['lcn'])} — {status}"
-                  + (f", vclock={vc}" if vc is not None else ""))
-            if rec["role"] == "secondary" and not rec.get("cksum_ok"):   # B5: the older slot is the secondary
+                  + (f", vclock={vc}" if vc is not None else "") + _tag)
+            if rec.get("clock_divergence"):   # K037: page-header clock (+0x10) != selection clock (+0x60)
+                backup_warn.append(f"checkpoint @ {_hx(rec['lcn'])} clock mismatch: "
+                                   f"+0x10={rec.get('vc_page')} vs +0x60={vc} (possible tampering)")
+            if rec["role"] == "secondary" and not rec.get("cksum_ok") and not rec.get("tied_clock"):
                 backup_warn.append(f"secondary checkpoint @ {_hx(rec['lcn'])} invalid")
-        n_supb = len(bk["supb"])
-        print(f"  Superblock copies:       {n_supb}")
+        if bk.get("checkpoint_tie"):          # K038: both copies share the top clock — a NOTE, not a warn
+            # A tie is an ambiguity (two equally-current copies), not corruption or a redundancy defect,
+            # so it must NOT force a WARN/rc 2 on an otherwise-healthy volume — it is reported honestly so
+            # the examiner knows the tool picked the active copy by lowest LCN.
+            print("  NOTE: both checkpoint copies share the top clock (tie); the active copy was chosen by "
+                  "lowest LCN and they are equally current.")
+        if bk.get("checkpoint_selected_via_fallback"):   # K036/K043: active copy failed its self-checksum
+            backup_warn.append("the highest-clock checkpoint failed its self-checksum; fell back to the "
+                               "highest-clock copy that passed")
+        # B3/K032: a damaged copy is listed so it is visible, but it must NOT be counted as redundancy.
+        n_supb = sum(1 for s in bk["supb"] if not s.get("damaged"))
+        n_dmg = sum(1 for s in bk["supb"] if s.get("damaged"))
+        print(f"  Superblock copies:       {n_supb} intact"
+              + (f" + {n_dmg} MISSING/DAMAGED" if n_dmg else ""))
         for s in bk["supb"]:
+            if s.get("damaged"):
+                # B3/K032: a copy is expected at this address and the signature is not there.
+                _what = ("all zeros" if s.get("all_zero")
+                         else ("signature %s" % s.get("found_signature") if s.get("found_signature")
+                               else "unreadable"))
+                print(f"      [{s.get('role','?'):7}] LCN {_hx(s['lcn'])} (offset {_hx(s['lcn'] * cs)}) "
+                      f"— MISSING/DAMAGED ({_what})")
+                backup_warn.append(f"SUPB copy at {_hx(s['lcn'])} is missing or damaged ({_what})")
+                continue
             _sok = "checksum OK" if s.get("cksum_ok") else ("signature OK" if s.get("ok") else "BAD")
             print(f"      [{s.get('role','?'):7}] LCN {_hx(s['lcn'])} (offset {_hx(s['lcn'] * cs)}) — {_sok}")
-        if n_supb < 2:
-            backup_warn.append("fewer than 2 SUPB copies located")
+        if sum(1 for s in bk["supb"] if not s.get("damaged")) < 2:
+            backup_warn.append("fewer than 2 intact SUPB copies located")
+        # This command builds its warning list INLINE, interleaved with the printing above, while
+        # `summary` derives the same rules from `_redundancy_findings`. The two drifted: K042's
+        # allocator-clock check and B7's not-cleanly-dismounted check landed in the shared function and
+        # `integrity` kept reporting PASS over both. Merge in anything the shared rule found that the
+        # inline pass did not, so a finding cannot exist on one surface and not the other.
+        for _extra in _redundancy_findings(bk):
+            if not any(_extra[:40] in _w for _w in backup_warn):
+                backup_warn.append(_extra)
         print()
 
         has_fail = any(s == "FAIL" for s, _, _ in report["issues"])
         has_warn = any(s == "WARN" for s, _, _ in report["issues"]) or bool(backup_warn)
         ck_bad = (ck_stats["crc64_bad"] + ck_stats["sha_bad"]) if ck_stats else 0
+        ck_bad += istream_bad     # B2/K071: a file-data CRC failure is corruption exactly as a page one is
+        # B1/K030 (RC2): a page that no longer matches its parent's recorded digest is corruption too. It
+        # was computed, printed, and read nowhere -- so a flipped byte in a directory's root page produced
+        # "Mismatched: 1" and "no tampering/corruption" in the same output, with rc 0.
+        _pr_bad = len(_findings("page-reference mismatch"))
+        ck_bad += _pr_bad
+        # B1 (K030/K031/K187/N4/N5): a verdict may claim "clean" ONLY when the check was complete AND
+        # found nothing. `has_warn` was printed but never reached rc/clean (K030); a `--max-pages` cap or
+        # an unreadable/absent page left coverage incomplete yet still printed "no tampering" (K031/N4).
+        # `capped`  -- the caller stopped the walk early (a partial check cannot certify the whole).
+        # `unreadable` -- a referenced page could not be read (a read error, not a clean page).
+        # `absent`  -- a referenced page is all-zeros in an image hole: an acquisition gap, so the image
+        #              is incomplete even though the volume is not at fault; a clean-PASS would overclaim.
+        cov_capped = bool(ck_stats and ck_stats.get("capped"))
+        cov_unread = int(ck_stats.get("unreadable", 0)) if ck_stats else 0
+        cov_absent = int(ck_stats.get("absent", 0)) if ck_stats else 0
+        incomplete = cov_capped or cov_unread or cov_absent
+        for n in backup_note:
+            print(f"  [NOTE] redundancy: {n}")
         if backup_warn:
             for w in backup_warn:
                 print(f"  [WARN] redundancy: {w}")
         if has_fail or ck_bad:
+            _ckwhat = "checksum mismatch(es)"
+            if istream_bad and istream_bad == ck_bad:
+                _ckwhat = "integrity-stream (file data) checksum mismatch(es)"
+            elif istream_bad:
+                _ckwhat = "checksum mismatch(es), %d of them in file-data integrity streams" % istream_bad
             verdict = "FAIL — " + ("structural corruption" if has_fail else "") + \
-                      (f"{' + ' if has_fail else ''}{ck_bad} checksum mismatch(es)" if ck_bad else "")
+                      (f"{' + ' if has_fail else ''}{ck_bad} {_ckwhat}" if ck_bad else "")
         elif has_warn:
             nwarn = sum(1 for s, _, _ in report['issues'] if s == 'WARN') + len(backup_warn)
             verdict = f"WARN — {nwarn} warning(s)" + (" (incl. redundancy)" if backup_warn else "")
+        elif incomplete:
+            _why = []
+            if cov_capped: _why.append("page cap reached (rerun with --max-pages N)")
+            if cov_unread: _why.append(f"{cov_unread} page(s) unreadable")
+            if cov_absent: _why.append(f"{cov_absent} page(s) absent from this image (acquisition gap)")
+            verdict = ("INCOMPLETE — no corruption found in what was checked, but coverage is not complete, "
+                       "so the volume is NOT certified clean: " + "; ".join(_why))
         elif ck_stats: verdict = f"PASS — structurally valid AND {ck_stats['crc64_ok']+ck_stats['sha_ok']} page checksums verified"
         else: verdict = "PASS — all metadata pages structurally valid (run --checksums / --fullchecksums to verify CRC64/SHA-256)"
+        clean = not (has_fail or ck_bad or has_warn or incomplete)
         print("-" * 78)
         print(f"Verdict: {verdict}")
         print("-" * 78)
@@ -12609,8 +14579,10 @@ def cmd_integrity(image, remaining, partition_start):
                 status = " ".join(d["issues"]) if d["issues"] else "OK"
                 print(f"  LCN {_hx(d['lcn']):<10} {sig_s:<5} {status}")
 
-        # Scriptable exit status: 2 = integrity failure (structural and/or checksum), 0 = clean.
-        _rc = 2 if (has_fail or ck_bad) else 0
+        # Scriptable exit status (B1): 2 = a finding OR an inability to certify clean (structural/checksum
+        # failure, a redundancy WARN, or incomplete coverage); 0 = fully verified clean. Was
+        # `2 if (has_fail or ck_bad)`, which reported rc 0 / clean=true over a WARN or a capped run (K030/K031).
+        _rc = 0 if clean else 2
         if out_fmt:
             sys.stdout = _saved_stdout
             _report_obj = {
@@ -12623,10 +14595,11 @@ def cmd_integrity(image, remaining, partition_start):
                 "container_map_entries": ct_entries,
                 "page_statistics": {k: v for k, v in report.items() if k not in ("issues", "page_details")},
                 "checksum_verification": ck_stats,
-                "redundancy": {"backup_copies": bk, "warnings": backup_warn},
+                "redundancy": {"backup_copies": bk, "warnings": backup_warn, "notes": backup_note},
                 "issues": [{"severity": s, "lcn": l, "message": m} for s, l, m in report["issues"]],
                 "verdict": verdict,
-                "clean": not (has_fail or ck_bad),
+                "clean": clean,
+                "coverage_complete": not incomplete,
             }
             _emit_json_obj(_report_obj, out_dest, "integrity report")
         return _rc
@@ -12640,8 +14613,13 @@ def cmd_export_metadata(image, remaining, partition_start):
     dumping a raw $MFT): VBR (primary+backup), both checkpoints, SUPB copies, the MLog control+log pages,
     the USN $J stream, and the full object B+-tree forest — plus manifest.json + sha256sums.txt."""
     import hashlib, json as _json
-    args = _parse_args(remaining, flags=["--redact-inline"],
+    # K017: `--refuse-holes` was rejected as an unknown option here, although this command WRITES
+    # content assembled from the volume (usn_J.bin, mlog_log_pages.bin) and the documented contract says
+    # the flag applies. Accepted, and it drives the same module switch every other bulk writer uses.
+    args = _parse_args(remaining, flags=["--redact-inline", "--refuse-holes"],
                        valued=["-o", "--out", "--what", "--btree-mode", "--max-scan"])
+    global _REFUSE_HOLES
+    _REFUSE_HOLES = bool(args["refuse_holes"])
     # A "metadata" bundle is NOT metadata-only: ReFS stores small streams INSIDE the record, so every
     # inline file (< 2 KiB on format 3.11+) and every inline ADS travels with the pages. Sharing a bundle
     # therefore shares small-file content, and the manifest states how much.
@@ -12683,7 +14661,7 @@ def cmd_export_metadata(image, remaining, partition_start):
                         "tool": PROG, "tool_version": VERSION,
                         "source_path": os.path.abspath(image),
                         "source_size_bytes": os.path.getsize(image),
-                        "source_content_pin": _source_pin(image),
+                        "source_content_pin": _source_pin(image, ps=ps, cs=cs, chkp=chkp_lcns),
                         "exported_utc": datetime.datetime.now(
                             datetime.timezone.utc).strftime("%Y-%m-%dT%H:%M:%SZ"),
                         "host": socket.gethostname(),
@@ -12696,10 +14674,16 @@ def cmd_export_metadata(image, remaining, partition_start):
         sha_lines = []
         _md_failures = []   # audit 4.1
 
-        def emit(name, data, source, **meta):
+        def emit(name, data, source, holes_mark=None, **meta):
+            # K017: this called the guarded writer with NO `holes_mark`, so an artefact assembled from
+            # hole-backed ranges was written with holes.json saying "none" and rc 0 -- while stderr said
+            # 30,404,608 bytes of $J came from holes. The mark is what ties the bytes to the holes the
+            # producer recorded while making them, so callers that ASSEMBLE content now pass it.
             if not data:
                 return
-            if _guarded_extract_write(os.path.join(outdir, name), data, _md_failures) is None:   # audit 4.1
+            if _guarded_extract_write(_collision_free_path(os.path.join(outdir, name)),   # K008: no clobber
+                                      data, _md_failures, holes_mark=holes_mark,
+                                      what=source) is None:   # audit 4.1
                 return
             h = hashlib.sha256(data).hexdigest()
             manifest["artifacts"].append(dict(file=name, bytes=len(data), sha256=h, source=source, **meta))
@@ -12737,25 +14721,51 @@ def cmd_export_metadata(image, remaining, partition_start):
 
         f.seek(ps); vbr = f.read(512)
         total_sectors = le64(vbr, 0x18) if len(vbr) >= 0x20 else 0
+        sector_size = _vbr_bytes_per_sector(vbr)             # A4
 
         if want("vbr"):
             emit("vbr_primary.bin", vbr, "boot sector @ LBA 0", lba=0)
             if total_sectors > 1:
                 try:
-                    f.seek(ps + (total_sectors - 1) * 512)
+                    f.seek(ps + (total_sectors - 1) * sector_size)   # A4
                     emit("vbr_backup.bin", f.read(512), "backup boot sector @ last LBA",
                          lba=total_sectors - 1)
                 except (OSError, OverflowError) as _e:
                     _skip_note("metadata export", "artefact at this offset", _e)
 
         if want("chkp"):
-            for i, cl in enumerate(chkp_lcns):
+            # K040: the role belongs to the DRIVER's rule, not to this list's order. ReFS alternates
+            # between two checkpoint copies, `ChooseCheckpointRecord<0>` picks by the selection clock at
+            # CHKP+0x60, and `chkp_lcns` is in SUPB list order -- which is not an age order. Measured
+            # over the corpus, position 0 is the OLDER copy on 58 of 117 volumes, so labelling by
+            # position stamped "current" on the superseded checkpoint about half the time, in the one
+            # artefact set an examiner carries away from the volume. The clock is published alongside
+            # the label so the reader can check the choice instead of trusting it; a tie is marked
+            # rather than broken silently, because the driver returns a distinct value on a tie.
+            _chkp_pages = {}
+            for cl in chkp_lcns:
                 try:
-                    d = rd(cl, 4)
-                    role = "current" if i == 0 else "alternate"
-                    emit(f"checkpoint_{i}_lcn{cl:x}.bin", d, f"CHKP ({role})", lcn=cl)
+                    _chkp_pages[cl] = rd(cl, 4)
                 except (OSError, OverflowError) as _e:
                     _skip_note("metadata export", "artefact at this offset", _e)
+            _chkp_clk = {cl: (le64(p, 0x60) if len(p) >= 0x68 and p[:4] == b"CHKP" else None)
+                         for cl, p in _chkp_pages.items()}
+            _seen_clk = [v for v in _chkp_clk.values() if v is not None]
+            _best_clk = max(_seen_clk) if _seen_clk else None
+            _clk_tie = _best_clk is not None and sum(1 for v in _seen_clk if v == _best_clk) > 1
+            for i, cl in enumerate(chkp_lcns):
+                d = _chkp_pages.get(cl)
+                if d is None:
+                    continue                      # already recorded by _skip_note above
+                _clk = _chkp_clk.get(cl)
+                if _clk is None:
+                    _role = "clock unreadable"
+                elif _clk != _best_clk:
+                    _role = "superseded"
+                else:
+                    _role = "current (tied)" if _clk_tie else "current"
+                emit(f"checkpoint_{i}_lcn{cl:x}.bin", d,
+                     f"CHKP ({_role}; clock {_clk if _clk is not None else '?'})", lcn=cl)
 
         if want("supb"):
             try:
@@ -12763,7 +14773,7 @@ def cmd_export_metadata(image, remaining, partition_start):
             except (OSError, OverflowError) as _e:
                 _skip_note("metadata export", "artefact at this offset", _e)
             if total_sectors > 1:
-                end_lcn = (total_sectors * 512) // cs
+                end_lcn = (total_sectors * sector_size) // cs        # A4
                 for lcn in (end_lcn - 2, end_lcn - 3):
                     try:
                         d = rd(lcn)
@@ -12773,10 +14783,22 @@ def cmd_export_metadata(image, remaining, partition_start):
                         _skip_note("metadata export", "artefact at this offset", _e)
 
         if want("mlog"):
+            # K020: this was `except Exception: mi = None`, so a FAILED MLog lookup became
+            # indistinguishable from a volume that simply has no MLog. The bundle then lacked the MLog
+            # artefacts with no manifest warning, no stderr and rc 0 -- and `verify-bundle` passed it.
+            # The `usn` branch below was already fixed for exactly this shape; this follows it.
+            _mlog_err = None
             try:
                 mi = get_mlog_info(f, ps, cs, tr, obj_map)
-            except Exception:
+            except Exception as _e:
                 mi = None
+                _mlog_err = "%s: %s" % (type(_e).__name__, _e)
+                _skip_note("metadata export", "the MLog lookup", _e)
+            if _mlog_err:
+                manifest["warnings"].append({"what": "mlog", "failed": True,
+                                             "reason": "MLog lookup FAILED: " + _mlog_err})
+            elif not mi:
+                manifest["warnings"].append({"what": "mlog", "reason": "no MLog on this volume"})
             if mi:
                 for k in ("ctrl_plcn_0", "ctrl_plcn_1"):
                     if mi.get(k):
@@ -12806,8 +14828,13 @@ def cmd_export_metadata(image, remaining, partition_start):
                         emit("mlog_log_index.csv",
                              ("block_lcn,byte_offset\n" + "\n".join(f"0x{p:x},{o}" for p, o in idx)).encode(),
                              "index for mlog_log_pages.bin")
-                except (OSError, OverflowError, KeyError):
-                    pass
+                except (OSError, OverflowError, KeyError) as _e:
+                    # K020: silently dropping the log pages left a bundle that LOOKS complete.
+                    manifest["warnings"].append({
+                        "what": "mlog",
+                        "failed": True,
+                        "reason": "MLog log-page export FAILED: %s: %s" % (type(_e).__name__, _e)})
+                    _skip_note("metadata export", "the MLog log pages", _e)
 
         if want("usn"):
             # This branch used to be `except Exception: pass`. A failed journal export then produced a
@@ -12823,23 +14850,28 @@ def cmd_export_metadata(image, remaining, partition_start):
                         manifest["warnings"].append({"what": "usn",
                                                      "reason": "journal located but it has no $J extents"})
                     else:
+                        _hm = _hole_mark()                 # K017/K018: mark BEFORE the bytes exist
                         jd = read_usn_j_stream(f, ps, cs, st["j_extents"], st["j_stream_size"],
                                                _content_what="USN $J change-journal stream")
-                        emit("usn_J.bin", jd, "USN $J change-journal stream (reassembled)")
+                        emit("usn_J.bin", jd, "USN $J change-journal stream (reassembled)",
+                             holes_mark=_hm)
                         # The $J bytes ship REASSEMBLED, so without their addresses they cannot be put
                         # back on a rehydrated volume and `usn`/`timeline` read an empty journal. MLog
                         # already ships `mlog_log_index.csv` for the same reason; this is its counterpart.
                         # Same element shape read_usn_j_stream() uses: dicts with "plcn" and "clusters",
                         # and the same running file offset, so the index describes exactly the bytes in
                         # usn_J.bin.
+                        # K074: this walked a RUNNING offset while `read_usn_j_stream` places each run at
+                        # `file_vcn * cs`. The two agree only on a contiguous map; on any other the index
+                        # would name the wrong byte offsets for the very bytes it ships, so a rehydrated
+                        # volume would reassemble the journal wrongly. Address them the same way.
                         idx = ["plcn,byte_offset,clusters"]
-                        off = 0
-                        _alloc = sum(_e["clusters"] for _e in st["j_extents"]) * cs
-                        for _e in st["j_extents"]:
-                            if off >= _alloc:
-                                break
-                            idx.append("0x%x,%d,%d" % (_e["plcn"], off, _e["clusters"]))
-                            off += _e["clusters"] * cs
+                        _alloc = max(_e["file_vcn"] + _e["clusters"] for _e in st["j_extents"]) * cs
+                        for _e in sorted(st["j_extents"], key=lambda _x: _x["file_vcn"]):
+                            _off = _e["file_vcn"] * cs
+                            if _off >= _alloc:
+                                continue
+                            idx.append("0x%x,%d,%d" % (_e["plcn"], _off, _e["clusters"]))
                         if len(idx) > 1:
                             emit("usn_J_index.csv", ("\n".join(idx) + "\n").encode("utf-8"),
                                  "index for usn_J.bin")
@@ -13000,7 +15032,7 @@ def cmd_dataruns(image, remaining, partition_start):
                         total_with_extents += 1
                 all_results.append(info)
             if depth > 0:
-                dir_rows = walk_bplus(f, ps, cs, tr, obj_map[dir_oid])
+                dir_rows = walk_bplus(f, ps, cs, tr, obj_map[dir_oid], oid=dir_oid)
                 for kd, vd in dir_rows:
                     if len(kd) >= 4 and le16(kd, 0) == 0x30 and len(vd) >= 0x44:
                         child_attrs = le32(vd, 0x40)
@@ -13029,10 +15061,13 @@ def cmd_dataruns(image, remaining, partition_start):
                     "file_size": info.get("file_size", 0),
                     "extent_count": len(runs),
                     "clusters": sum(e["clusters"] for e in runs),
-                    "extents": ";".join("fvcn=%d,VLCN=%s,PLCN=%s,clu=%d" % (
-                        e["file_vcn"], _hx(e["vlcn"]), _hx(e["plcn"]), e["clusters"]) for e in runs),
+                    "extents": ";".join(
+                        ("fvcn=%d,HOLE,clu=%d" % (e["file_vcn"], e["clusters"])) if e.get("is_hole")
+                        else ("fvcn=%d,VLCN=%s,PLCN=%s,clu=%d" % (
+                            e["file_vcn"], _hx(e["vlcn"]), _hx(e["plcn"]), e["clusters"])) for e in runs),
                     "runs": [{"file_vcn": e["file_vcn"], "vlcn": e["vlcn"], "plcn": e["plcn"],
-                              "clusters": e["clusters"], "disk_offset": e["disk_offset"]} for e in runs],
+                              "clusters": e["clusters"], "disk_offset": e["disk_offset"],
+                              "is_hole": bool(e.get("is_hole"))} for e in runs],
                 })
             _emit_records(recs, cols, out_fmt, out_dest, "files")
             return 0
@@ -13086,6 +15121,15 @@ def cmd_dataruns(image, remaining, partition_start):
                         print(f"            created={_filetime_to_str(info['timestamps'][0]).replace(' UTC', '')}")
                     if verbose:
                         for ext in info["extents"]:
+                            if ext.get("is_hole"):
+                                # A1/K002: a hole is not a run at cluster 0. Printed as VLCN 0x0 / PLCN 0x0
+                                # it read exactly like a real run pointing at the boot region -- the same
+                                # confusion that put SUPB pages inside extracted files.
+                                _why = ext.get("hole_source") or "sparse flag 0x20"
+                                print(f"            hole: fvcn={ext['file_vcn']} "
+                                      f"clusters={ext['clusters']} "
+                                      f"(no allocation — reads as zeros; {_why})")
+                                continue
                             print(f"            run: fvcn={ext['file_vcn']} "
                                   f"VLCN={_hx(ext['vlcn'])} "
                                   f"PLCN={_hx(ext['plcn'])} "
@@ -13177,12 +15221,15 @@ def cmd_export_resident(image, remaining, partition_start):
                 if content is None or len(content) == 0:
                     skipped += 1; continue
                 rel = _safe_relpath(f"{path}/{info['name']}" if path else info["name"])
-                dest = os.path.join(out_dir, rel)
+                # K008: two source names that sanitise to the same path (e.g. `xbpt(txt` and `xbpt)txt`
+                # -> `xbpt_txt`) must not clobber each other. The deleted/carve writers already guard;
+                # this writer did not, so the second file silently overwrote the first. Same guard here.
+                dest = _collision_free_path(os.path.join(out_dir, rel))
                 if _guarded_extract_write(dest, content, _res_failures, holes_mark=_hm,
                                           what=f"resident file '{info['name']}'"):   # audit 4.1 (also creates the subdir)
                     written += 1
             if depth > 0:
-                for kd, vd in walk_bplus(f, ps, cs, tr, obj_map[dir_oid]):
+                for kd, vd in walk_bplus(f, ps, cs, tr, obj_map[dir_oid], oid=dir_oid):
                     if len(kd) >= 4 and le16(kd, 0) == 0x30 and len(vd) >= 0x44 and (le32(vd, 0x40) & 0x10000000):
                         child = le64(vd, 0x08) if len(vd) >= 0x10 else 0
                         if child and child in obj_map:
@@ -13218,7 +15265,7 @@ def cmd_export_recyclebin(image, remaining, partition_start):
     try:
         recycle_oid = None
         if 0x600 in obj_map:
-            for kd, vd in walk_bplus(f, ps, cs, tr, obj_map[0x600]):
+            for kd, vd in walk_bplus(f, ps, cs, tr, obj_map[0x600], oid=0x600):
                 if len(kd) >= 4 and le16(kd, 0) == 0x30 and len(vd) >= 0x10 and \
                         kd[4:].decode("utf-16-le", errors="replace").rstrip("\x00") == "$RECYCLE.BIN":
                     recycle_oid = le64(vd, 0x08); break
@@ -13242,7 +15289,7 @@ def cmd_export_recyclebin(image, remaining, partition_start):
                                              _content_what="recycled file %s" % info["name"])
                     if c:
                         r_content[(sid, info["name"])] = (c, _hm)   # mark travels with the bytes
-            for kd, vd in walk_bplus(f, ps, cs, tr, obj_map[dir_oid]):
+            for kd, vd in walk_bplus(f, ps, cs, tr, obj_map[dir_oid], oid=dir_oid):
                 if len(kd) >= 4 and le16(kd, 0) == 0x30 and len(vd) >= 0x44 and (le32(vd, 0x40) & 0x10000000):
                     child = le64(vd, 0x08) if len(vd) >= 0x10 else 0
                     if child and child in obj_map:
@@ -13255,7 +15302,8 @@ def cmd_export_recyclebin(image, remaining, partition_start):
                 continue
             content, _hm = _got
             orig = r["meta"]["original_path"] if r.get("meta") else r["r_name"]
-            dest = os.path.join(out_dir, _safe_relpath(orig.replace("\\", "/").split("/")[-1] or r["r_name"]))
+            dest = _collision_free_path(                                     # K008: no clobber on collision
+                os.path.join(out_dir, _safe_relpath(orig.replace("\\", "/").split("/")[-1] or r["r_name"])))
             if _guarded_extract_write(dest, content, _rb_failures, holes_mark=_hm,
                                       what="recycled file %s" % r["r_name"]):   # audit 4.1
                 written += 1
@@ -13531,7 +15579,8 @@ CMD_HELP = {
            "opcode, target OID and PLCN+offset so every field is verifiable against the raw disk bytes.",
            "NOTE: this is the DURABLE LOG — operations here may not yet be checkpointed into the committed",
            "tree, so `files`/`summary` can omit recent activity shown here (and vice-versa). The per-record",
-           "'commit' flag is 0 on every volume (commit is a checkpoint/LogCore fact, not a redo-record flag).",
+           "A redo block's LAST record carries the commit flag (bit 1 at +0x2C); a log payload holds a CHAIN",
+           "of up to 15 merged blocks, and every block in it is parsed.",
            "--stats also RECOMPUTES each record's own 8-byte integrity value the way the driver does before",
            "replaying it, so a torn or byte-edited record is reported instead of being parsed silently. It is",
            "an integrity check, not a signature: it catches damage and edits, it is not proof of authenticity.",
@@ -13581,16 +15630,18 @@ CMD_HELP = {
            "preserving copies. HIGH requires an AUTHORITATIVE source (the journal, or a hard-link sibling) --",
            "a count of heuristic signals never reaches it. MEDIUM is CHANGE_LATE without PRE_FORMAT, or FUTURE.",
            "INFO means every signal present is one a timestamp-preserving copy also produces, so a copy and a",
-           "backdate cannot be told apart however many fire. The `files --timestomp` column shows only the $SI",
-           "heuristic; this subcommand adds the authoritative checks. The screen view defaults to HIGH-confidence",
+           "backdate cannot be told apart however many fire. The screen view defaults to HIGH-confidence",
            "rows; --min reveals lower tiers; CSV/JSON keep ALL tiers unless --min is given. ROUND_TIMESTAMPS",
            "(whole-second created AND modified) never lifts a tier on its own."],
   "opts": [("--all", "include every file, even those with no anomaly (NONE tier)"),
            ("--min LEVEL", "lowest confidence to show on screen: HIGH | MEDIUM | LOW (default HIGH; CSV/JSON "
                            "export every tier unless this is set)"),
            ("--margin-days N", "tolerance (days) when comparing two timestamps before calling a difference an "
-                               "anomaly (default 1). Larger N = fewer flags (fewer false positives, may miss "
-                               "small back-dates); smaller N = more sensitive."),
+                               "anomaly (default 1). It applies to the USN cross-check too — the "
+                               "USN_CREATE_MISMATCH comparison against the journal's own create records — "
+                               "not only to the intrinsic signals (K194). Larger N = fewer flags (fewer false "
+                               "positives, may miss small back-dates); smaller N = more sensitive. Must be a "
+                               "non-negative whole number of days."),
            ("--csv/--json [FILE]", "machine output to stdout or FILE (every tier)"),
            ("--depth N", "max recursion depth (default: full)")],
   "ex": [("timestomp", "HIGH-confidence suspects (add --min LOW for all)"),
@@ -14081,6 +16132,12 @@ def main():
                     print(f"{PROG}: error: invalid --partition-start value: {remaining[i + 1]}", file=sys.stderr)
                     sys.exit(1)
                 i += 2
+            elif remaining[i] == "--verify-pages":
+                # A9: a GLOBAL flag, like --partition-start. The forensic subcommands parse their own
+                # options and reject anything they do not know, so it is consumed here and armed for all
+                # of them -- otherwise `extract --verify-pages` would die with "unknown option".
+                _arm_page_verification()
+                i += 1
             else:
                 filtered.append(remaining[i]); i += 1
         if not os.path.exists(image):
@@ -14148,6 +16205,12 @@ def main():
                     help="files: partition offset for the --cow-before image (default: auto-detect its own "
                          "GPT). C16: use when the before-image has a DIFFERENT layout than the main image "
                          "(otherwise both auto-detect). NOTE: the CoW-recovery path is lightly tested.")
+    ap.add_argument("--verify-pages", action="store_true",
+                    help="Check every metadata page read against the digest in its parent page reference "
+                         "(Merkle chain). SLOW: 3-6x on a command that walks the tree — measured on a real "
+                         "Windows installation, `files` 9.5s -> 32.3s and `summary` 5.0s -> 29.1s; commands "
+                         "that do not walk the tree are unaffected. Off by default; without it no page "
+                         "digest is checked, and nothing in the output claims one was.")
     ap.add_argument("-q", "--quiet", action="store_true", help="Suppress progress to stderr")
     args = ap.parse_args()
     if args.command is None:
@@ -14162,6 +16225,12 @@ def main():
     def die(msg):
         print(f"{PROG}: error: {msg}", file=sys.stderr)
         sys.exit(1)
+
+    # A9. Arming this is what makes every metadata page read get checked against its parent's digest.
+    # The warning is printed BEFORE the work starts, not after: a user who did not expect a minute of
+    # CRC should be able to stop it, and one who did should see that it is running.
+    if args.verify_pages:
+        _arm_page_verification()
 
     # Output format mutual exclusion (--csv/--json/--jsonl accept an optional FILE, so they are None-or-str)
     fmt_count = sum(1 for v in (args.body, args.csv, args.json, args.jsonl) if v is not None)
@@ -14237,7 +16306,7 @@ def main():
     _usn_unknown = False
     if 0x520 in obj_map:
         try:
-            for kd, _vd in walk_bplus(f, ps, cs, tr, obj_map[0x520]):
+            for kd, _vd in walk_bplus(f, ps, cs, tr, obj_map[0x520], oid=0x520):
                 if len(kd) >= 4 and le16(kd, 0) == 0x30:
                     nm = _row_name(kd, "USN presence check")
                     if nm is None:
@@ -14313,6 +16382,25 @@ def main():
             _emit_json_obj(combined, _native_fmt_dest(args)[1], "summary")
         else:
             _print_summary(walk_summary, fast_data, plus_mode=is_plus)
+        # A6/K034 + A5/K033: `summary` PRINTED redundancy damage ("— MISSING/DAMAGED", "BAD") and still
+        # exited 0, so a scripted caller reading only the exit code was told the volume was fine. Same
+        # rule as `integrity` (shared in _redundancy_findings) so the two cannot disagree.
+        _red = _redundancy_findings(fast_data.get("bootstrap_backups") or {})
+        _red = list(_CHKP_STALE) + _red          # A1/K035: a stale view is the most important thing to say
+        if _SUPB_FELL_BACK:
+            _red.insert(0, "primary superblock at 0x%x is unreadable; the volume was read from the backup "
+                           "copy at 0x%x" % (_SUPB_FELL_BACK.get("primary_lcn", SUPB_LCN),
+                                             _SUPB_FELL_BACK.get("used_lcn", 0)))
+        if _red and args.json is None:
+            print()
+            print("-" * 78)
+            print("Redundancy findings (exit code 2)")
+            print("-" * 78)
+            for _w in _red:
+                print(f"  [WARN] {_w}")
+            print("-" * 78)
+        if _red:
+            _REDUNDANCY_FINDING.extend(_red)
         f.close()
         return
 
@@ -14496,10 +16584,16 @@ def main():
                                   True, trash_set)
     ndirs = sum(1 for r in results if r["is_dir"])
     nfiles = sum(1 for r in results if not r["is_dir"])
-    nresident = sum(1 for r in results if not r["is_dir"] and r.get("is_resident"))
+    # C1/K096: this line counted `is_resident` -- the walk's RECORD-PLACEMENT flag -- while `summary`,
+    # `files --csv` and `search` all report DATA residency under the very same words. On lab314_main that
+    # printed "4041 inline + 627 extent-backed" here against "4049 + 619" everywhere else: two correct
+    # answers to two DIFFERENT questions (E87/E88 -- a move or a hard link flips placement and never
+    # touches where the bytes are), shown as one question with two answers. It now uses the same helper
+    # the CSV column does, so the surfaces cannot drift apart again.
+    nresident = sum(1 for r in results if not r["is_dir"] and _data_residency(r) == "inline")
     nnonres = nfiles - nresident
-    # D1: the file partition (resident + non-resident = files). The hard-link/special counts go on their own
-    # line below so nothing looks like a partition it isn't.
+    # D1: the file partition (inline + everything else = files). The hard-link/special counts go on their
+    # own line below so nothing looks like a partition it isn't.
     log(f"[{PROG}] {ndirs} dirs, {nfiles} files ({nresident} inline + {nnonres} extent-backed)")
     # Special-file categories — SAME predicates as `specials` (A3 consistency), so the counts always agree.
     _spc = {name: sum(1 for r in results if pred(r)) for name, _d, pred in SPECIALS_TYPES}
@@ -14560,12 +16654,58 @@ def main():
 
     ndeleted = sum(1 for r in results if r.get("is_deleted"))
     if dest:
-        print(f"Wrote {len(results)} entries to {dest}")
+        # A3/K039: an EMPTY listing produced over metadata the tool could not read is a READ FAILURE, not
+        # an empty volume -- and "Wrote 0 entries" states the second. On a volume whose Object-ID root
+        # page had been zeroed this line was the headline result, with the damage note far below it in
+        # the log stream. Say it on the line that carries the count.
+        if not results and _WALK_DAMAGE:
+            # Lead with the failure: a line that OPENS with a count reads as a successful empty result
+            # no matter what follows it.
+            print(f"LISTING FAILED — 0 entries written to {dest}: {len(_WALK_DAMAGE)} metadata "
+                  f"page(s)/table(s) could not be read, so this is NOT an empty volume. See the warnings "
+                  f"below for what was unreadable.")
+        elif _WALK_DAMAGE:
+            print(f"Wrote {len(results)} entries to {dest} — INCOMPLETE: {len(_WALK_DAMAGE)} metadata "
+                  f"page(s)/table(s) could not be read, so entries may be missing.")
+        else:
+            print(f"Wrote {len(results)} entries to {dest}")
     log(f"[{PROG}] Done. {len(results)} entries ({ndeleted} deleted) -> {fmt.upper()} {dest or '(stdout)'}")
+
+def _escalate_rc(rc):
+    """B4 / audit K049: exit 2 when the run could not do all its work and the command would otherwise
+    report success. K049 was "recorded skips never change exit status or verdicts, while the code claims
+    skipped work is reported" -- the claim is now true because the skip registers below drive the status.
+
+    A count, listing or verdict produced over metadata the tool could not read is incomplete, and a
+    script that branches on the exit status must be able to see that. Only a SUCCESS code is escalated:
+    a usage error (1) and an existing finding (2) are left alone.
+    """
+    # S1 (RC2): `_FINDINGS` is the sink every new finding goes to, so this list stops growing. The six
+    # named registers are the pre-RC2 ones, kept because they are gate-verified; `_SUPB_FELL_BACK` was
+    # NOT among them, which is why a zeroed primary superblock exited 2 from `summary` and 0 from
+    # `files` and `integrity` (B7). An enumeration is what made that possible -- a sink is not.
+    try:
+        if rc == 0 and (_FINDINGS or _SKIP_FINDING or _WALK_DAMAGE or _REDUNDANCY_FINDING or _CHKP_STALE
+                        or _JOURNAL_TAIL_DESTROYED or _VERSION_CONTRADICTED or _SUPB_FELL_BACK):
+            return 2
+    except NameError:
+        # A register that does not exist is a programming error in THIS function, not a data condition;
+        # it must not be swallowed into a clean exit. Anything else propagates.
+        raise
+    return rc
+
 
 if __name__ == "__main__":
     try:
-        main()
+        _main_rc = main()
+        sys.exit(_escalate_rc(0 if _main_rc is None else _main_rc))
+    except SystemExit as _se:
+        _code = _se.code
+        if _code is None:
+            _code = 0
+        if not isinstance(_code, int):
+            sys.exit(_code)
+        sys.exit(_escalate_rc(_code))
     except BrokenPipeError:
         # A downstream reader closed the pipe early (e.g. `| head`, or `| more` then `q`). Redirect stdout to
         # devnull so the interpreter's flush-on-exit does not raise a second BrokenPipeError + traceback.

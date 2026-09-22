@@ -1,0 +1,23 @@
+# Bundle round-trip fixtures — a bundle must reproduce its source volume, and must carry the pages the
+# READER asks for, not the pages the exporter's walk happened to enumerate.
+#
+# Why this file exists: published v1.12.1 shipped bundles whose own `files --csv` disagreed with the source
+# volume on 31 split-record files (HasADS=False, DataResidency=unknown) — wrong answers on an artefact whose
+# entire purpose is to be read without the disk. Gate 1h proved the fix, but only in the maintainer's tree:
+# nothing a reader could run from a clone demonstrated it. These fixtures are that, shipped like the hole
+# fixtures.
+#
+# WHAT IS PINNED, and what deliberately is not. Each row asserts:
+#   * listing EQUALITY  — `files --csv` from the bundle is byte-identical to the source volume, and
+#   * on-demand PRESENCE — `min_ondemand` rows in metadata_index.csv are tagged `on-demand`.
+# It does NOT pin the exact on-demand count, nor the `inline_content` figure. Those are properties of one
+# specific sample: pinning them would make the fixture sample-versioned, so a harmless regeneration of the
+# sample breaks a check that was never about the sample. The exact figures live in the golden, which is
+# regenerated deliberately. (Shape agreed with the auditor, 2026-09-13.)
+#
+# `image_sha256` is the volume_pin content hash (size + content at fixed offsets), not a whole-image
+# SHA-256: these volumes are up to 2 TB apparent for a few hundred MB of data.
+#
+# image	min_ondemand	volume_pin	why this sample
+analysis/samples/disks/win11refs2tspecials/win11refs2tspecials.raw	1	038af049f42e3c93	split records with ADS — the shape that broke in v1.12.1; its backing records are fetched on demand
+analysis/samples/disks/win11refs2tsnapshots/win11refs2tsnapshots.raw	0	2a2e20a75f3b2416	snapshots and copy-on-write streams; needs no on-demand page, so it is the control that the capture adds what is needed and nothing else

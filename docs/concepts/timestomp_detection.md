@@ -11,8 +11,9 @@ timestamp set per name**, not a second `$FILE_NAME` copy — so for a **single-n
 `$SI`-vs-`$FN` twin to compare against and that particular cross-check is unavailable. A **hard-linked**
 file differs: each of its names holds an **independent** timestamp copy, and those copies **can** hold
 different times — where NTFS's links share one `$SI` and cannot diverge. Divergence between a file's names
-is evidence; **agreement is not**, because calling `SetFileTime` through one name was measured to update
-every name at once (see [Hard Links](hard_links.md)). Beyond that, timestomping is detectable
+is evidence; **agreement is not**, because the file's own record takes the new time for every name at
+once and only each name's index entry lags behind — and any read of a sibling catches it up (see
+[Hard Links](hard_links.md)). Beyond that, timestomping is detectable
 through different anchors: the metadata-change time that common
 tools cannot reach, the [USN change journal](../structures/usn_journal.md) that records the tampering
 operation itself, and the volume's own creation time as a hard floor. This page explains each anchor,
@@ -103,13 +104,13 @@ and a different way to be wrong.
 | Signal | Meaning | Source | Strength |
 |--------|---------|--------|----------|
 | **CHANGE_LATE** | `$SI` change time (0x10) post-dates Created/Modified by a wide margin — back-dated B/M against the real metadata-write time | intrinsic ($SI only) | strong vs common tools; **defeated** by a native-API or raw-disk stomp that sets `C` too |
-| **HARDLINK_MACB_MISMATCH** | two names of one hard-linked file disagree on Created. Nothing routine produces this, so it is a strong lead — but which name holds the true birth is **not** established, because the mechanism that makes the copies diverge was never decompiled | intrinsic (per-name `$SI`) | strong; **journal-independent**, and unlike NTFS the copies *can* diverge. Only fires when a file has more than one name, and its **absence means nothing**: a `SetFileTime` through one name updates every name at once |
-| **USN_BASIC_INFO_CHANGE** | the journal holds a **standalone** `BASIC_INFO_CHANGE` (reason 0x8000, with no `FILE_CREATE` or `DATA_*` bits) — a deliberate basic-info / timestamp edit with **no content change**, recorded at its real time | USN journal | authoritative |
+| **HARDLINK_MACB_MISMATCH** | two names of one hard-linked file disagree on Created. Nothing routine produces this, so it is a strong lead — but which name holds the true birth is **not** established | intrinsic (per-name `$SI`) | strong; **journal-independent**, and unlike NTFS the copies *can* diverge. Only fires when a file has more than one name, and its **absence means nothing** — see the mechanism below: agreement has two causes, and one of them is that somebody read the file |
+| **USN_BASIC_INFO_CHANGE** | the journal holds a **standalone** `BASIC_INFO_CHANGE` (reason 0x8000, with no `FILE_CREATE` or `DATA_*` bits) — a deliberate basic-info / timestamp edit with **no content change**, recorded at its real time | USN journal | authoritative **It is gated**: this signal is only recorded when `CHANGE_LATE`, `PRE_FORMAT` or `CREATE_GT_MODIFY` also fired on the same file, so a standalone journal edit with no intrinsic signal is **not reported at all** — an authoritative signal suppressed by the absence of a heuristic one. Treat a file's silence here as 'not corroborated', never as 'the journal recorded nothing'. **It is not specific to tampering**: on the T21 lab volume 34 records carry reason exactly `0x00008000` across 27 names, and only **12** are the lab's deliberate stomps — the rest are timestamp-preserving operations that legitimately rewrite basic info, such as `robocopy /COPY:DAT` and extracting an archive with stored times. It is authoritative that an edit happened, not that it was a backdate. |
 | **USN_CREATE_MISMATCH** | `$SI` Created differs from the file's `FILE_CREATE` journal record (the journal is append-only) | USN journal | authoritative |
 | **PRE_FORMAT** | Created precedes the **volume** creation time — impossible for a file genuinely created here | intrinsic + volume | strong\* |
 | **FUTURE** | Created after the volume's last metadata write | intrinsic + volume | medium\* |
 | **CREATE_GT_MODIFY** | Created after last write | intrinsic | weak\* |
-| **ROUND_TIMESTAMPS** | both Created **and** Modified land on a whole second (`.0000000` sub-second) — a set date is one cause, but VirtIO/QEMU driver packages and archive extraction also produce whole-second stamps | intrinsic ($SI only) | **LOW only** — never rises above LOW, never upgrades another tier |
+| **ROUND_TIMESTAMPS** | both Created **and** Modified land on a whole second (`.0000000` sub-second) — a set date is one cause, but VirtIO/QEMU driver packages and archive extraction also produce whole-second stamps | intrinsic ($SI only) | **INFO**, not LOW — `ROUND_TIMESTAMPS` is part of the copy signature, so on its own it returns INFO |
 
 \* `PRE_FORMAT`, `FUTURE`, `CREATE_GT_MODIFY` — and `CHANGE_LATE` — also fire on a
 **creation-time-preserving copy** (robocopy `/COPY:T`, a backup restore) or a legitimate late rename or
@@ -123,11 +124,37 @@ the same times, so it does **not** trip on benign copies — it fires only when 
 disagree on Created, and nothing routine makes them disagree. It needs no journal and no volume-create
 floor to stand on.
 
-What it does **not** tell you is *why* they disagree. The obvious candidate — a `SetFileTime` through one
-path — was measured and does the opposite: it updates every name at once, leaving them identical. So the
-mechanism behind an observed divergence is unknown, no name can be called the authentic one, and every
-name of a diverging group is flagged rather than a chosen one. Treat it as a strong lead into the
+What it does **not** tell you is *which* name holds the authentic birth. The mechanism below explains
+why the copies disagree, but not which side of the disagreement is the original: the stale entry is the
+one nobody opened, and that is not the same thing as the one nobody forged. So every name of a diverging
+group is flagged rather than a chosen one. Treat it as a strong lead into the
 [journal](../structures/usn_journal.md), not as a self-contained verdict.
+
+
+### Why the copies diverge, and why the signal is perishable
+
+Two layers, and they refresh at different times:
+
+* The **file's own record** takes the new timestamp **immediately**. In that sense a `SetFileTime`
+  through one name updates every name at once — the file has one truth.
+* Each **name's index entry** is a **lazily refreshed cache** of it. `RefsUpdateFileDupInfo` refreshes
+  only the entry of the name that was **opened**; siblings stay stale until each is opened in turn.
+
+So a stomp through one name leaves that name's entry current and every un-opened sibling holding
+**pre-stomp** times — which is the divergence this signal detects.
+
+**It follows that agreement clears nothing**, because agreement has two causes: the names never
+diverged, *or* they diverged and something opened the sibling. And it follows that the evidence is
+**perishable** — any open refreshes that name's entry. An antivirus scan, a search indexer, an
+inventory pass, a `Get-FileHash` sweep, or the examiner's own `dir` will erase it for the name it
+touches.
+
+Measured on a controlled pair (`labA_image1` / `labA_image2`) differing by exactly one recorded action,
+`read-sibling-name-ONLY`: before, one name is HIGH with `HARDLINK_MACB_MISMATCH` and the sibling shows
+the pre-stomp birth; after **merely reading** the sibling, the mismatch is gone and the sibling is not
+flagged at all.
+
+**Image before anything touches the volume.** A read is not a safe operation for this evidence.
 
 ## Confidence tiers
 
@@ -140,7 +167,7 @@ happen to fire together.
 | **HIGH** | the journal confirms a deliberate edit (`USN_BASIC_INFO_CHANGE` / `USN_CREATE_MISMATCH`), **or** a hard-link sibling preserves a different birth time (`HARDLINK_MACB_MISMATCH`) | an independent source disagrees with `$SI` |
 | **MEDIUM** | `CHANGE_LATE` **without** `PRE_FORMAT` — created on *this* volume and altered afterwards — or `FUTURE` | worth investigating; a copy cannot produce it |
 | **INFO** | only the copy-signature set fires: `PRE_FORMAT`, `CHANGE_LATE`, `CREATE_GT_MODIFY`, `ROUND_TIMESTAMPS` | **ambiguous**, see below |
-| **LOW** | anything else that fires but fits none of the above | weak; corroborate before use |
+| **LOW** | **unreachable** — exhaustive enumeration of all 256 pipeline-constructible inputs (6 signals × `usn_conf` × `hl_conf`) yields HIGH 223, MEDIUM 20, INFO 11, NONE 2 and **LOW 0**. The tier exists in the code and in `--min LOW`, but no input reaches it |
 
 ### Why `PRE_FORMAT` + `CHANGE_LATE` is INFO, and what INFO does *not* mean
 
@@ -262,12 +289,21 @@ builds the `$SI` fields from the FCB, `RefsMoveFile` writes the directory child-
 driver honours an explicit `FILE_BASIC_INFORMATION.ChangeTime`. The two journal-independent witnesses are
 **MD_TS_RA_009** (the MLog `CREATE` embedded timestamp measured against `$SI` on a controlled set whose
 journal had been destroyed) and **MD_SNAP_RA_010** (the snapshot descriptor records the snapshot moment,
-not a copy of `$SI`). The detection itself is validated on the
-raw-disk corpus (RD) against a controlled ground-truth image built by a replay log of `SET_TIMESTAMPS`
-operations that back-date creation by years on a freshly formatted volume: every HIGH-tier file has a
-provable basis (created before the volume existed and/or a journal-confirmed deliberate edit), the clean
-baseline and a clean operations image (real renames, ADS, snapshots, symlinks, hardlinks) flag nothing,
-and the same synthetic back-dated files are flagged identically wherever the test corpus was written. The
+not a copy of `$SI`). **What the detection was measured against, and what that measurement can and cannot establish.**
+It was run on the raw-disk corpus against a controlled ground-truth image built from a replay log of
+`SET_TIMESTAMPS` operations that back-date creation by years on a freshly formatted volume. On that set
+every HIGH-tier file has a provable basis (created before the volume existed, and/or a
+journal-confirmed deliberate edit); the clean baseline and a clean operations image (real renames, ADS,
+snapshots, symlinks, hard links) flag nothing; and the same synthetic back-dated files are flagged
+identically wherever the test corpus was written.
+
+That is the coverage, and it is narrower than it sounds — which is stated here rather than left for a
+reader to discover. **Every file in that set has a unique, freshly created name.** Correlating a journal
+record to a file BY NAME and correlating it BY FileRef therefore give the same answer on every one of
+them, so the set cannot exhibit — and so cannot rule out — an error in which of the two the tool uses.
+A test set that cannot produce the failure it is meant to detect does not establish its absence. The
+cases that WOULD separate them (a name reused after deletion, a file renamed after the edit, two live
+files sharing a name in different directories) are not present on it. The
 journal's standalone `BASIC_INFO_CHANGE` records sit on the timestomp image at the tampering's real time
 while `$SI` shows the forged time. The per-name MACB behind `HARDLINK_MACB_MISMATCH` is a documented
 correction (RD): `$SI` is stored per name entry (per hard link), not per inode, and the copies were

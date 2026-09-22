@@ -16,22 +16,23 @@ ReFS Volume Fast Extended Summary
 
 ------------------------------------------------------------------------------
 Bootstrap structures
+  (offsets below are ABSOLUTE in the image file; partition starts at 0x1000000)
 ------------------------------------------------------------------------------
-  VBR primary      LBA 0 (offset 0x0)  — checksum OK
+  VBR primary      LBA 0 (offset 0x1000000)  — checksum OK
       ae4fee4b0bf7d973a0ceffc9d5fbf7b0a69d38740b560a44cc6084c64b1fae72
-  SUPB primary     LCN 0x1e (offset 0x1e0000)  — checksum OK
+  SUPB primary     LCN 0x1e (offset 0x11e0000)  — checksum OK
       4e456243e25316f916e54b8d6342afa28bd31b1431aba62f99ab647691d6cd22
-  CHKP primary     LCN 0x3d15 (offset 0x3d150000)  — checksum OK, vclock=161
+  CHKP primary     LCN 0x3d15 (offset 0x3e150000)  — checksum OK, vclock=161
       86401c7abebf1062f11eaaa4bfb4d4d0ab325528234b74df4ee6ef45e0822bd1
 ------------------------------------------------------------------------------
-  VBR backup       LBA 16646143 (off 0x1fbfffe00)  — = primary, checksum OK
+  VBR backup       LBA 16646143 (off 0x1fcfffe00)  — = primary, checksum OK
       ae4fee4b0bf7d973a0ceffc9d5fbf7b0a69d38740b560a44cc6084c64b1fae72
-  SUPB backup      LCN 0x1fbfd (offset 0x1fbfd0000)  — checksum OK
+  SUPB backup      LCN 0x1fbfd (offset 0x1fcfd0000)  — checksum OK
       131805bffa5173e4ce645832b41cf8d2214a27276d3ddab9b561085c89906216
-  SUPB backup      LCN 0x1fbfe (offset 0x1fbfe0000)  — checksum OK
+  SUPB backup      LCN 0x1fbfe (offset 0x1fcfe0000)  — checksum OK
       06f9c8be96753f5373cdeae6bdf65ef8303d3f9fb6ab7f7ef25d534893ffa9e4
-  CHKP secondary   LCN 0x538 (offset 0x5380000)  — checksum OK, vclock=160
-      fa84d5691301ba4f9353429de7ad62f2bed55df4cb615d43a8bb5a6d122c6361
+  CHKP secondary   LCN 0x538 (offset 0x6380000)  — checksum OK, vclock=160
+      07427daf3ac0d6140fe9ba369b2ab61ab1e0e7d15c9be698f247e6eb32293bac
 
 note: the SUPB copies hash differently by design (each carries its own LCN +
 self-checksum); their payload is identical — redundancy, not divergence.
@@ -89,7 +90,7 @@ File System Content (from directory walk)
 ------------------------------------------------------------------------------
   Directories:        118
   Files:              776 (251 inline + 525 extent-backed)
-  Total file size:    822.2 MB
+  Total file size:    803.4 MB
   Oldest timestamp:   2021-05-18 07:16:04.9990009
   Newest timestamp:   2026-05-19 20:00:58.3654380
   Encrypted files:    0

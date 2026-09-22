@@ -16,21 +16,22 @@ ReFS Volume Fast Extended Summary
 
 ------------------------------------------------------------------------------
 Bootstrap structures
+  (offsets below are ABSOLUTE in the image file; partition starts at 0x1000000)
 ------------------------------------------------------------------------------
-  VBR primary      LBA 0 (offset 0x0)  — checksum OK
+  VBR primary      LBA 0 (offset 0x1000000)  — checksum OK
       538e65189e94bb78f61ba3b9571892ae92472ea79e0fc22517b94eb468ee5cfc
-  SUPB primary     LCN 0x1e (offset 0x1e000)  — checksum OK
+  SUPB primary     LCN 0x1e (offset 0x101e000)  — checksum OK
       426bea8d9c9985153b6cc1972378911c48da7bca4a58798d62add921c3bedcea
-  CHKP primary     LCN 0x3d702ac (offset 0x3d702ac000)  — checksum OK, vclock=367
-      89d861f193751a65e9e1a9571d67103397383dbb1a3a32ae0a3eab3b288b33dc
+  CHKP primary     LCN 0x3d702ac (offset 0x3d712ac000)  — checksum OK, vclock=367
+      4b5e8beaa15cd75f506fc8eec40f81156857ae3d8e53278bb29d15aec755c6e5
 ------------------------------------------------------------------------------
-  VBR backup       LBA 4294836223 (off 0x1fffbfffe00)  — = primary, checksum OK
+  VBR backup       LBA 4294836223 (off 0x1fffcfffe00)  — = primary, checksum OK
       538e65189e94bb78f61ba3b9571892ae92472ea79e0fc22517b94eb468ee5cfc
-  SUPB backup      LCN 0x1fffbffd (offset 0x1fffbffd000)  — checksum OK
+  SUPB backup      LCN 0x1fffbffd (offset 0x1fffcffd000)  — checksum OK
       fcba90bad550ea0e0f959a6d4920598742d5c8eab68502b38c943c38d14a21ca
-  SUPB backup      LCN 0x1fffbffe (offset 0x1fffbffe000)  — checksum OK
+  SUPB backup      LCN 0x1fffbffe (offset 0x1fffcffe000)  — checksum OK
       e15bd94a50d1dffccdcb8f047b2af7c4c2f86c4eac470b7c6f35ddb359bb4e99
-  CHKP secondary   LCN 0x51eb04 (offset 0x51eb04000)  — checksum OK, vclock=366
+  CHKP secondary   LCN 0x51eb04 (offset 0x51fb04000)  — checksum OK, vclock=366
       298d2fe54bf302a62b8a133fd33bfa482258b49f06fcaae059d3286dda6e29ff
 
 note: the SUPB copies hash differently by design (each carries its own LCN +
@@ -86,7 +87,7 @@ File System Content (from directory walk)
 ------------------------------------------------------------------------------
   Directories:        217
   Files:              1333 (535 inline + 798 extent-backed)
-  Total file size:    568.2 MB
+  Total file size:    520.7 MB
   Oldest timestamp:   2021-05-18 07:16:04.9990009
   Newest timestamp:   2026-05-16 16:41:35.0548102
   Encrypted files:    0

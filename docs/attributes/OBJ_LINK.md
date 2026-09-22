@@ -17,8 +17,11 @@ Two things to handle when counting:
   pairs, not rows. (Observed on moved files; the operation that produces the second copy is not yet pinned.)
 - **Scope "always present".** These rows live on objects that have their own record: directories (in their
   type-0x10 row) and files whose record was split out into a type-0x40 backing. A file whose name row still
-  *embeds* its record (`key_flags` 0x01) has **none** — 0 of 219 on the audited volume. On **ReFS 3.4** no
-  directory carries one either (0 of 309 measured), so the v3.4 form is not a drop-in equivalent.
+  *embeds* its record (`key_flags` 0x01) has **none** — 0 of 219 on the audited volume. On **ReFS 3.4**
+  every directory **does** carry one: **445 of 445 directories over 13 v3.4 volumes**, with no exception
+  (`win10refsmini` 6/6, `win10refs2g`/`5g4k`/`5g64k`/`8g`/`19g`/`110g` 34/34 each, `win10refs2tspecials`
+  149/149). The v3.4 row is a different *shape* from the v3.7+ one — see the two key tables below — but it
+  is present, so absence must not be used to tell the formats apart.
 
 ## Value layout
 
@@ -34,10 +37,17 @@ timestamps).
 | 0x0C | 2 | Type code | 0x0039 |
 | 0x0E | 2 | Sub-type | 0x000D |
 | 0x10 | 4 | Parent OID | the parent directory OID |
-| 0x14 | var | Filename | UTF-16LE, in the key/value overlap |
+| 0x14 | 12 | Reserved | zero on **314,249 of 314,249** rows measured |
+| 0x20 | var | Filename | UTF-16LE, in the key/value overlap — **not** NUL-terminated |
 
 **v3.7+ — value:** `0x00` marker 0x80000002, `0x04` type 0x0039, `0x06` sub-type 0x000D, `0x08` parent
-OID, `0x0C` reserved (12 bytes, 0), `0x18` filename (UTF-16LE, null-terminated).
+OID, `0x0C` reserved (12 bytes, 0), `0x18` filename (UTF-16LE).
+
+The name sits at **value+0x18, which is key+0x20** — the key is 8 length bytes followed by the whole
+value, so the two addresses are the same bytes. Over **314,249 type-0x39 rows on 126 volumes**:
+`key[0x20:] == value[0x18:]` on 314,249; reading the name at `key+0x14` succeeds on **0**, because
+`key[0x14:0x20]` is the 12 reserved zero bytes on every row. The name runs to the end of the row and
+carries **no NUL terminator** (0 of 314,249) — take its length from the row, not from a scan for `00 00`.
 
 **v3.4 — value** (the common 12-byte sub-record header, then a full metadata block):
 

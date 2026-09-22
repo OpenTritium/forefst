@@ -51,7 +51,7 @@ only, and the sync step regenerates.
 | [extent_descriptors.md](structures/extent_descriptors.md) | Extent descriptors (type 0x40) map a file's logical cluster offsets (VCNs) to virtual LCNs (VLCNs). | CT_DRNT_001, CT_DRNT_003, CT_DRNT_RA_001, MD_ADS_RA_002, MD_DATA_RA_001, MD_DATA_RA_002, MD_DATA_RA_007, MD_DATA_RA_009, MD_DATA_RA_011, MD_DATA_RA_013, MD_DATA_RA_014, MD_DATA_RA_023, MD_DATA_RA_024, MD_DATA_RA_028, MD_DATA_RA_030, MD_SF_RA_004, MD_SF_RA_005, MD_SNAP_RA_003 |
 | [integrity_state.md](structures/integrity_state.md) | The Integrity State Table (root #11, table ID 0x0F, schema 0xe080) tracks volume-level … | FS_CHKP_020 |
 | [mlog.md](structures/mlog.md) | The MLog implements write-ahead logging for atomic metadata updates. | AP_EVNT_001, AP_EVNT_002, AP_EVNT_003, AP_EVNT_004, AP_EVNT_005, AP_EVNT_006, AP_EVNT_007, AP_LGFL_003, AP_LGFL_004, AP_LGFL_RA_003, AP_LGFL_RA_005, AP_LGFL_RA_006, AP_LGFL_RA_008, AP_LGFL_RA_010, AP_LGTB_001, AP_LGTB_002, AP_LGTB_003, AP_LGTB_005, AP_REDO_001, AP_REDO_002, AP_REDO_003, AP_REDO_004, AP_REDO_005, AP_REDO_006, AP_REDO_007, AP_REDO_008, AP_REDO_009, AP_REDO_010, AP_REDO_011, AP_REDO_012, AP_REDO_013, AP_REDO_014, AP_REDO_015, AP_REDO_016, AP_REDO_017, AP_REDO_018, AP_REDO_019, AP_REDO_020, AP_REDO_021, AP_REDO_022, AP_REDO_023, AP_REDO_024, AP_REDO_025, AP_REDO_026, AP_REDO_027, AP_REDO_028, AP_REDO_029, AP_REDO_030, AP_REDO_031, AP_REDO_032, AP_REDO_033, AP_REDO_034, AP_REDO_035, AP_REDO_036, AP_REDO_037, AP_REDO_038, AP_REDO_039, AP_REDO_040 |
-| [object_table.md](structures/object_table.md) | The Object Table (roots #0 and #5, schema 0xe030) is the master OID-to-table mapping. | FS_OTBL_001, FS_OTBL_002, FS_OTBL_RA_002, FS_OTBL_RA_007, FS_OTBL_SA_001, FS_OTBL_SA_003, FS_OTBL_SA_007, MD_ATTR_RA_005 |
+| [object_table.md](structures/object_table.md) | The Object Table (roots #0 and #5, schema 0xe030) is the master OID-to-table mapping. | FS_OTBL_001, FS_OTBL_002, FS_OTBL_RA_002, FS_OTBL_RA_007, FS_OTBL_RA_009, FS_OTBL_SA_001, FS_OTBL_SA_003, FS_OTBL_SA_007, MD_ATTR_RA_005 |
 | [page_header.md](structures/page_header.md) | Every ReFS metadata page -- SUPB, CHKP, and MSB+ (B+-tree) -- begins with a common 80-byte header. | FS_SUPB_RA_001, FS_SUPB_RA_004, GN_PAGE_001, GN_PAGE_002, GN_PAGE_003, GN_PAGE_004, GN_PAGE_005, GN_PAGE_006, GN_PAGE_007, GN_PAGE_RA_001, GN_PAGE_RA_002 |
 | [page_references.md](structures/page_references.md) | A page reference binds a child page's address to a checksum of that child's contents. | FS_CHKP_004, FS_SUPB_006, FS_SUPB_RA_003, GN_PREF_002, GN_PREF_003, GN_PREF_RA_004 |
 | [parent_child_table.md](structures/parent_child_table.md) | The Parent-Child Table (root #4, schema 0xe040) encodes the directory hierarchy. | FN_DTBL_004, FS_OTBL_004, FS_OTBL_SA_010, FS_PCHL_001, FS_PCTB_RA_001, GN_IENT_005 |
@@ -292,7 +292,7 @@ pages stating one fact with *different numbers* — gates 7h and 7i check exactl
 | `FS_CHKP_RA_008` | E1 | CONFIRMED |  | [chkp.md](structures/chkp.md) |
 | `FS_CHKP_RA_009` | E2 … | CONFIRMED |  | [tool_artifact_map.md](concepts/tool_artifact_map.md) |
 | `FS_CHKP_RA_011` | E2 | CONFIRMED |  | [chkp.md](structures/chkp.md) |
-| `FS_CHKP_RA_012` | — | CONTRADICTED | 2 | [forensic_analysis_workflow.md](concepts/forensic_analysis_workflow.md), [chkp.md](structures/chkp.md) |
+| `FS_CHKP_RA_012` | RD | NEW | 2 | [forensic_analysis_workflow.md](concepts/forensic_analysis_workflow.md), [chkp.md](structures/chkp.md) |
 | `FS_CHKP_RA_013` | RD | CONFIRMED | 3 | [forensic_analysis_workflow.md](concepts/forensic_analysis_workflow.md), [version_detection.md](concepts/version_detection.md), [chkp.md](structures/chkp.md) |
 | `FS_CHKP_RA_014` | E3 | CONFIRMED | 6 | [carrier_categories.md](concepts/carrier_categories.md), [deletion_recovery.md](concepts/deletion_recovery.md), [forensic_analysis_workflow.md](concepts/forensic_analysis_workflow.md), [redundancy.md](concepts/redundancy.md), [what_survives.md](concepts/what_survives.md), [find_a_deleted_file.md](examples/find_a_deleted_file.md) |
 | `FS_CHKP_RA_015` | E3 | CONFIRMED |  | [chkp.md](structures/chkp.md) |
@@ -317,6 +317,7 @@ pages stating one fact with *different numbers* — gates 7h and 7i check exactl
 | `FS_OTBL_RA_006` | E2 | ENRICHED |  | [object_ids.md](concepts/object_ids.md) |
 | `FS_OTBL_RA_007` | — | NEW |  | [object_table.md](structures/object_table.md) |
 | `FS_OTBL_RA_008` | E3 | CONFIRMED | 4 | [hard_links.md](concepts/hard_links.md), [snapshots_versioning.md](concepts/snapshots_versioning.md), [what_survives.md](concepts/what_survives.md), [trash_table.md](structures/trash_table.md) |
+| `FS_OTBL_RA_009` | RD | NEW |  | [object_table.md](structures/object_table.md) |
 | `FS_OTBL_SA_001` | E2 … | CONFIRMED |  | [object_table.md](structures/object_table.md) |
 | `FS_OTBL_SA_002` | E2 … | CONFIRMED |  | [object_ids.md](concepts/object_ids.md) |
 | `FS_OTBL_SA_003` | E2 … | CONFIRMED |  | [object_table.md](structures/object_table.md) |
@@ -337,7 +338,7 @@ pages stating one fact with *different numbers* — gates 7h and 7i check exactl
 | `FS_RESD_SA_002` | E2 | CONFIRMED |  | [driver_transitions.md](concepts/driver_transitions.md) |
 | `FS_SCHM_001` | E2 | CONFIRMED |  | [schema_table.md](structures/schema_table.md) |
 | `FS_SCHM_RA_001` | E2 | CONFIRMED | 2 | [tool_artifact_map.md](concepts/tool_artifact_map.md), [system_oids.md](structures/system_oids.md) |
-| `FS_SCHM_RA_002` | E2 … | CONTRADICTED |  | [schema_table.md](structures/schema_table.md) |
+| `FS_SCHM_RA_002` | E2 … | CONFIRMED |  | [schema_table.md](structures/schema_table.md) |
 | `FS_SCHM_RA_003` | E2 … | CONFIRMED |  | [schema_table.md](structures/schema_table.md) |
 | `FS_SCHM_RA_004` | E2 … | CONFIRMED |  | [tiering.md](concepts/tiering.md) |
 | `FS_SCHM_RA_005` | E1 | CONFIRMED | 4 | [attributes.md](concepts/attributes.md), [snapshots_versioning.md](concepts/snapshots_versioning.md), [tool_artifact_map.md](concepts/tool_artifact_map.md), [schema_table.md](structures/schema_table.md) |
@@ -346,7 +347,7 @@ pages stating one fact with *different numbers* — gates 7h and 7i check exactl
 | `FS_SCHM_RA_008` | E2 … | ENRICHED | 3 | [snapshots_versioning.md](concepts/snapshots_versioning.md), [tool_artifact_map.md](concepts/tool_artifact_map.md), [schema_table.md](structures/schema_table.md) |
 | `FS_SCHM_RA_009` | RD | CONFIRMED |  | [schema_table.md](structures/schema_table.md) |
 | `FS_SCHM_RA_010` | E1+RD | CONFIRMED | 2 | [tool_artifact_map.md](concepts/tool_artifact_map.md), [schema_table.md](structures/schema_table.md) |
-| `FS_SCHM_RA_011` | RD | CONTRADICTED |  | [schema_table.md](structures/schema_table.md) |
+| `FS_SCHM_RA_011` | RD | CONFIRMED |  | [schema_table.md](structures/schema_table.md) |
 | `FS_SECD_RA_001` | E2 | CONFIRMED | 3 | [tool_artifact_map.md](concepts/tool_artifact_map.md), [what_survives.md](concepts/what_survives.md), [system_oids.md](structures/system_oids.md) |
 | `FS_SECD_RA_002` | E2 | CONFIRMED |  | [tool_artifact_map.md](concepts/tool_artifact_map.md) |
 | `FS_SECD_RA_003` | — | INFERRED | 2 | [tool_artifact_map.md](concepts/tool_artifact_map.md), [schema_table.md](structures/schema_table.md) |
@@ -359,7 +360,7 @@ pages stating one fact with *different numbers* — gates 7h and 7i check exactl
 | `FS_SUPB_006` | — | CONFIRMED |  | [page_references.md](structures/page_references.md) |
 | `FS_SUPB_007` | — | CONFIRMED | 5 | [bootstrap_chain.md](concepts/bootstrap_chain.md), [checksum_architecture.md](concepts/checksum_architecture.md), [forensic_analysis_workflow.md](concepts/forensic_analysis_workflow.md), [redundancy.md](concepts/redundancy.md), [supb.md](structures/supb.md) |
 | `FS_SUPB_RA_001` | E2 | CONFIRMED |  | [page_header.md](structures/page_header.md) |
-| `FS_SUPB_RA_002` | — | CONFIRMED |  | [checksum_architecture.md](concepts/checksum_architecture.md) |
+| `FS_SUPB_RA_002` | E2+RD | CONFIRMED |  | [checksum_architecture.md](concepts/checksum_architecture.md) |
 | `FS_SUPB_RA_003` | — | CONFIRMED | 6 | [bootstrap_chain.md](concepts/bootstrap_chain.md), [checksum_architecture.md](concepts/checksum_architecture.md), [forensic_analysis_workflow.md](concepts/forensic_analysis_workflow.md), [redundancy.md](concepts/redundancy.md), [page_references.md](structures/page_references.md), [supb.md](structures/supb.md) |
 | `FS_SUPB_RA_004` | — | CONFIRMED |  | [page_header.md](structures/page_header.md) |
 | `FS_SUPB_RA_005` | — | CONFIRMED |  | [forensic_analysis_workflow.md](concepts/forensic_analysis_workflow.md) |
@@ -563,7 +564,7 @@ pages stating one fact with *different numbers* — gates 7h and 7i check exactl
 | `MD_SF_RA_004` | — | NEW |  | [extent_descriptors.md](structures/extent_descriptors.md) |
 | `MD_SF_RA_005` | RD | CONFIRMED |  | [extent_descriptors.md](structures/extent_descriptors.md) |
 | `MD_SI_RA_001` | E2+RD | CONFIRMED |  | [hard_links.md](concepts/hard_links.md) |
-| `MD_SI_RA_002` | E2+RD | CONTRADICTED | 2 | [DATA.md](attributes/DATA.md), [tool_artifact_map.md](concepts/tool_artifact_map.md) |
+| `MD_SI_RA_002` | E2+RD | CONFIRMED | 2 | [DATA.md](attributes/DATA.md), [tool_artifact_map.md](concepts/tool_artifact_map.md) |
 | `MD_SI_RA_003` | RD | CONTRADICTED |  | [tool_artifact_map.md](concepts/tool_artifact_map.md) |
 | `MD_SI_RA_004` | RD | CONFIRMED |  | [STANDARD_INFORMATION.md](attributes/STANDARD_INFORMATION.md) |
 | `MD_SI_RA_005` | E2+RD | CONFIRMED |  | [STANDARD_INFORMATION.md](attributes/STANDARD_INFORMATION.md) |
@@ -611,7 +612,7 @@ pages stating one fact with *different numbers* — gates 7h and 7i check exactl
 
 ## 3. Register rows no page cites
 
-The triage list: **19 of 487** register rows are cited by no page in
+The triage list: **19 of 488** register rows are cited by no page in
 `attributes/, structures/, concepts/, tools/, examples/` — the denominator is the content directories, because those are the
 pages a reader reaches. A row here is one of three things, and the triage decides which:
 
@@ -644,4 +645,4 @@ Rows read in register order. A mention in `changelog.md` does not count as docum
 | `FS_VBR_RA_014` | — | CONFIRMED |
 
 ---
-*Generated by `build_docs_index.py` — 83 pages indexed, 468 of 487 register rows cited, 125 cited on more than one page. The claim register is `analysis/reference_table.csv`.*
+*Generated by `build_docs_index.py` — 83 pages indexed, 469 of 488 register rows cited, 125 cited on more than one page. The claim register is `analysis/reference_table.csv`.*

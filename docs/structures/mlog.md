@@ -85,18 +85,39 @@ Each data page holds exactly one redo block — typically all records of a singl
 > literature's "56-byte log record header with checksum" is the entry header; the "120-byte entry
 > header" is the Layer 1 record header.
 
-### Iteration logic (from `ForEachRedoInBlock`)
+### Iteration logic
+
+A log payload holds a **chain of merged redo blocks** — up to 15 — and each block's records are budgeted
+by that block's own `total_size`. Both loops are taken from the driver.
+
+**The chain (`ForEachBlockInMergedBlock`):**
 
 ```text
-remaining = total_size - first_record_offset
-ptr = header + first_record_offset
-if (total_size < first_record_offset + 8) or (total_size < 0x38): error
-while (record.size <= remaining) and (record.size != 0):
+remaining = payload_length
+if remaining < 8: error
+while (block.total_size != 0) and (block.total_size <= remaining):
+ process(block)
+ remaining -= block.first_record_offset + block.total_size
+ if remaining < 8: stop
+ ptr += block.first_record_offset + block.total_size      # the NEXT block
+```
+
+**The records inside one block (`ForEachRedoInBlock`):**
+
+```text
+if (total_size + first_record_offset < 8) or (total_size < 0x38): error
+budget = total_size                    # first_record_offset locates the first record;
+ptr    = header + first_record_offset  # it is NOT subtracted from the budget
+while (record.size <= budget) and (record.size != 0):
  process(record)
- remaining -= record.size
- if remaining < 0x38: break
+ budget -= record.size
+ if budget < 0x38: stop
  ptr += record.size
 ```
+
+The **last record of a block carries the commit flag** (bit 1 at `_SmsRedoRecord+0x2C`). Measured on a
+dirty lab volume: 75,695 of 75,695 blocks close exactly under this budget, and 75,695 of 75,695 have a
+commit-flagged final record.
 
 ## Overall layout
 
@@ -198,7 +219,7 @@ are relative to the payload base (`data_off = entry_header_offset + payload_offs
 | +0x08 | 8 | Data start LCN | Physical start of data area |
 | +0x10 | 8 | Data end LCN | Physical end of data area |
 | +0x18 | 8 | LSN oldest | Oldest active LSN |
-| +0x20 | 8 | Generation | Log generation counter |
+| +0x20 | 8 | LSN (duplicate of +0x18) | **The same `u64` LSN as `+0x18`, not a separate generation counter** — equal as a full `u64` on **16 of 16** control copies over 8 volumes (v3.4 and v3.14), values `0x100000092` … `0x700002e5b`. What tooling has called "Generation" is this LSN's high half |
 | +0x38 | 8 | Write counter | Cumulative write operations |
 | +0x48 | 8 | Total entries | Cumulative entries since format |
 | +0x50 | 16 | Control UUID | Secondary UUID (matches header UUID) |
@@ -210,7 +231,7 @@ entry header.
 **The control area is a compact header.** Although the control area reserves `0xE48` (3656) bytes
 (self-described by the `0x98` length word), it is populated only through ≈byte `0xF8`; **everything from
 ~`0xF8` to `0xE48` (≈93% of the area) is zero.** Those bytes are not hidden fields — they are the zero
-gaps between the small fixed descriptors above plus the zero tail. The header is **stable per volume**
+gaps between the small fixed descriptors above plus the zero tail. The header is **not** stable per volume — the LSN fields at `+0x18`/`+0x20` advance with the log
 (magic@0x04, UUID@0x10 echoed at payload+0x28, area-length@0x98, the data-area bounds, and the
 LSN/generation pair do not change between captures of the same volume); the dynamic log progression lives
 in the data-area records, not the control header.
@@ -370,7 +391,7 @@ value data of records that modify file metadata:
 |-------------|----------|--------|
 | InsertRow (0x01) | v1 at offsets 0x28-0x40 | create_time, modify_time, access_time, change_time |
 | UpdateDataWithRoot (0x04) | v0 at offsets 0x00-0x18 | Timestamp update payload |
-| UpdateRow (0x03) | v1 at offsets 0x90, 0xA0, 0x30, 0x28, 0x08, 0x00 | $SI timestamp fields (multiple fallback positions) |
+| UpdateRow (0x03) | v1 at offsets **0xA0**, 0x90, 0x30, 0x28, 0x08, 0x00 | $SI timestamp fields. **`+0xA0` is the written modify/mount time and is tried first**; `+0x90` is the volume's FORMAT time, so taking it first dates every volume-information update at the moment the volume was created. Measured on `lab314_main_step3_dirty`: with `+0xA0` first, the last such record reads `2026-09-12 17:21:28`, matching the volume's own `Volume modified: 2026-09-12 17:21:28.1422270`. The remaining offsets are fallbacks for records that carry neither. |
 
 Timestamps are Windows FILETIME format (100-ns intervals since 1601-01-01). Not all transactions contain
 timestamps — system-level operations (allocator, container table) typically have no embedded time.

@@ -4,7 +4,7 @@ ReFS Checkpoint Analysis with Container-Table Translation
 ==============================================================================
   Image                          wininsiderrefs8gtest2.raw
   Image size                     8589934592 bytes (8.00 GiB)
-  CHKP SHA-256                   7fd2ca804c2bf76b90980f6fb6ba137728cc31460af710fae2ed0790145fafe9
+  CHKP SHA-256                   86401c7abebf1062f11eaaa4bfb4d4d0ab325528234b74df4ee6ef45e0822bd1
   Partition start                0x1000000
   Cluster size                   0x10000 (65536 bytes)
   ReFS version                   3.14

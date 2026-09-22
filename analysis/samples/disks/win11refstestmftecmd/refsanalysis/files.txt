@@ -809,8 +809,8 @@ ReFS Directory Tree
   FILE  (non-res)    testintegrity/dir_gamma_404999/dir_whiskey_550421/dir_sierra_463915/dir_yankee_672946/dir_uniform_914766/xbpt_log_cache_206425.lnk
   FILE  (non-res)    testintegrity/dir_gamma_404999/dir_whiskey_550421/dir_sierra_463915/dir_yankee_672946/dir_uniform_914766/xbpt_november_tango_774662.json
   FILE  (non-res)    testintegrity/dir_gamma_404999/dir_whiskey_550421/dir_sierra_463915/dir_yankee_672946/dir_uniform_914766/xbpt_papa_echo_578274.xml
-   ADS               testintegrity/dir_gamma_404999/dir_whiskey_550421/dir_sierra_463915/dir_yankee_672946/dir_uniform_914766/xbpt_papa_echo_578274.xml:hidden_5137  (46B)
    ADS               testintegrity/dir_gamma_404999/dir_whiskey_550421/dir_sierra_463915/dir_yankee_672946/dir_uniform_914766/xbpt_papa_echo_578274.xml:hidden_2447  (46B)
+   ADS               testintegrity/dir_gamma_404999/dir_whiskey_550421/dir_sierra_463915/dir_yankee_672946/dir_uniform_914766/xbpt_papa_echo_578274.xml:hidden_5137  (46B)
   FILE  (non-res)    testintegrity/dir_gamma_404999/dir_whiskey_550421/dir_sierra_463915/dir_yankee_672946/dir_uniform_914766/xbpt_quebec_quebec_401025.bak
   FILE  (non-res)    testintegrity/dir_gamma_404999/dir_whiskey_550421/dir_sierra_463915/dir_yankee_672946/dir_uniform_914766/xbpt_symlink_alpha_777420.lnk
   FILE  (resident)   testintegrity/dir_gamma_404999/dir_whiskey_550421/dir_sierra_463915/dir_yankee_672946/dir_uniform_914766/xbpt_symlink_draft_955075.lnk
@@ -850,8 +850,8 @@ ReFS Directory Tree
   FILE  (non-res)    testintegrity/dir_gamma_404999/dir_whiskey_550421/dir_sierra_463915/xbpt_alpha_yankee_461608.md
   FILE  (non-res)    testintegrity/dir_gamma_404999/dir_whiskey_550421/dir_sierra_463915/xbpt_archive_hotel_840184.log
   FILE  (non-res)    testintegrity/dir_gamma_404999/dir_whiskey_550421/dir_sierra_463915/xbpt_beta_romeo_915995.xml
-   ADS               testintegrity/dir_gamma_404999/dir_whiskey_550421/dir_sierra_463915/xbpt_beta_romeo_915995.xml:hidden_9266  (46B)
    ADS               testintegrity/dir_gamma_404999/dir_whiskey_550421/dir_sierra_463915/xbpt_beta_romeo_915995.xml:hidden_5965  (46B)
+   ADS               testintegrity/dir_gamma_404999/dir_whiskey_550421/dir_sierra_463915/xbpt_beta_romeo_915995.xml:hidden_9266  (46B)
   FILE  (non-res)    testintegrity/dir_gamma_404999/dir_whiskey_550421/dir_sierra_463915/xbpt_hardlink_alpha_216580.lnk
   FILE  (non-res)    testintegrity/dir_gamma_404999/dir_whiskey_550421/dir_sierra_463915/xbpt_hardlink_beta_447656.bak
   FILE  (non-res)    testintegrity/dir_gamma_404999/dir_whiskey_550421/dir_sierra_463915/xbpt_hardlink_lima_190401.lnk
@@ -1023,9 +1023,9 @@ ReFS Directory Tree
   FILE  (non-res)    testintegrity/dir_romeo_348517/dir_alpha_208192/xbpt_trace_sync_836061.lnk
   FILE  (non-res)    testintegrity/dir_romeo_348517/dir_alpha_208192/xbpt_uniform_archive_994216.csv
   FILE  (non-res)    testintegrity/dir_romeo_348517/dir_alpha_208192/xbpt_victor_india_410451.bak
-   ADS               testintegrity/dir_romeo_348517/dir_alpha_208192/xbpt_victor_india_410451.bak:hidden_5439  (46B)
-   ADS               testintegrity/dir_romeo_348517/dir_alpha_208192/xbpt_victor_india_410451.bak:hidden_4653  (46B)
    ADS               testintegrity/dir_romeo_348517/dir_alpha_208192/xbpt_victor_india_410451.bak:hidden_1987  (46B)
+   ADS               testintegrity/dir_romeo_348517/dir_alpha_208192/xbpt_victor_india_410451.bak:hidden_4653  (46B)
+   ADS               testintegrity/dir_romeo_348517/dir_alpha_208192/xbpt_victor_india_410451.bak:hidden_5439  (46B)
   FILE  (non-res)    testintegrity/dir_romeo_348517/dir_alpha_208192/xbpt_whiskey_kilo_696933.md
   DIR   0x81b        testintegrity/dir_romeo_348517/dir_lima_228687
   DIR   0x82a        testintegrity/dir_romeo_348517/dir_lima_228687/dir_india_641930
@@ -1100,8 +1100,8 @@ ReFS Directory Tree
   FILE  (non-res)    testintegrity/dir_romeo_348517/dir_lima_228687/dir_kilo_987907/xbpt_hardlink_yankee_108900.bak
   FILE  (non-res)    testintegrity/dir_romeo_348517/dir_lima_228687/dir_kilo_987907/xbpt_hardlink_zulu_755897.dat
   FILE  (non-res)    testintegrity/dir_romeo_348517/dir_lima_228687/dir_kilo_987907/xbpt_hotel_backup_546532.tmp
-   ADS               testintegrity/dir_romeo_348517/dir_lima_228687/dir_kilo_987907/xbpt_hotel_backup_546532.tmp:hidden_9575  (46B)
    ADS               testintegrity/dir_romeo_348517/dir_lima_228687/dir_kilo_987907/xbpt_hotel_backup_546532.tmp:hidden_5331  (46B)
+   ADS               testintegrity/dir_romeo_348517/dir_lima_228687/dir_kilo_987907/xbpt_hotel_backup_546532.tmp:hidden_9575  (46B)
   FILE  (non-res)    testintegrity/dir_romeo_348517/dir_lima_228687/dir_kilo_987907/xbpt_log_alpha_992477.dat
   FILE  (non-res)    testintegrity/dir_romeo_348517/dir_lima_228687/dir_kilo_987907/xbpt_mike_beta_811261.tmp
   FILE  (non-res)    testintegrity/dir_romeo_348517/dir_lima_228687/dir_kilo_987907/xbpt_oscar_audit_617257.json
@@ -1136,8 +1136,8 @@ ReFS Directory Tree
   FILE  (non-res)    testintegrity/dir_romeo_348517/dir_lima_228687/xbpt_tango_lima_130282.dat
   FILE  (non-res)    testintegrity/dir_romeo_348517/xbpt_beta_index_476236.lnk
   FILE  (resident)   testintegrity/dir_romeo_348517/xbpt_delta_hotel_266388.json
-   ADS               testintegrity/dir_romeo_348517/xbpt_delta_hotel_266388.json:hidden_6405  (46B)
    ADS               testintegrity/dir_romeo_348517/xbpt_delta_hotel_266388.json:hidden_2477  (46B)
+   ADS               testintegrity/dir_romeo_348517/xbpt_delta_hotel_266388.json:hidden_6405  (46B)
   FILE  (non-res)    testintegrity/dir_romeo_348517/xbpt_gamma_romeo_253136.bak
   FILE  (non-res)    testintegrity/dir_romeo_348517/xbpt_hardlink_backup_932249.lnk
   FILE  (non-res)    testintegrity/dir_romeo_348517/xbpt_hardlink_india_193722.bak
@@ -1154,10 +1154,10 @@ ReFS Directory Tree
   FILE  (non-res)    testintegrity/dir_romeo_348517/xbpt_tango_record_968896.md
   FILE  (non-res)    testintegrity/dir_romeo_348517/xbpt_temp_romeo_257411.json
   FILE  (non-res)    testintegrity/dir_romeo_348517/xbpt_zulu_index_720705.lnk
-   ADS               testintegrity/dir_romeo_348517/xbpt_zulu_index_720705.lnk:hidden_7951  (46B)
-   ADS               testintegrity/dir_romeo_348517/xbpt_zulu_index_720705.lnk:hidden_3017  (46B)
-   ADS               testintegrity/dir_romeo_348517/xbpt_zulu_index_720705.lnk:hidden_2425  (46B)
    ADS               testintegrity/dir_romeo_348517/xbpt_zulu_index_720705.lnk:hidden_1200  (46B)
+   ADS               testintegrity/dir_romeo_348517/xbpt_zulu_index_720705.lnk:hidden_2425  (46B)
+   ADS               testintegrity/dir_romeo_348517/xbpt_zulu_index_720705.lnk:hidden_3017  (46B)
+   ADS               testintegrity/dir_romeo_348517/xbpt_zulu_index_720705.lnk:hidden_7951  (46B)
   DIR   0x822        testintegrity/dir_tango_306249
   DIR   0x886        testintegrity/dir_tango_306249/dir_papa_595973
   FILE  (non-res)    testintegrity/dir_tango_306249/xbpt_delta_log_857078.csv
@@ -1193,22 +1193,22 @@ ReFS Directory Tree
   FILE  (non-res)    testintegrity/xbpt_hotel_record_380235.bak
    ADS               testintegrity/xbpt_hotel_record_380235.bak:hidden_8210  (46B)
   FILE  (non-res)    testintegrity/xbpt_index_victor_598659.bak
-   ADS               testintegrity/xbpt_index_victor_598659.bak:hidden_8436  (46B)
-   ADS               testintegrity/xbpt_index_victor_598659.bak:hidden_6044  (46B)
-   ADS               testintegrity/xbpt_index_victor_598659.bak:hidden_5372  (46B)
-   ADS               testintegrity/xbpt_index_victor_598659.bak:hidden_4782  (46B)
-   ADS               testintegrity/xbpt_index_victor_598659.bak:hidden_2588  (46B)
-   ADS               testintegrity/xbpt_index_victor_598659.bak:hidden_2393  (46B)
-   ADS               testintegrity/xbpt_index_victor_598659.bak:hidden_1155  (46B)
    ADS               testintegrity/xbpt_index_victor_598659.bak:hidden_1042  (46B)
+   ADS               testintegrity/xbpt_index_victor_598659.bak:hidden_1155  (46B)
+   ADS               testintegrity/xbpt_index_victor_598659.bak:hidden_2393  (46B)
+   ADS               testintegrity/xbpt_index_victor_598659.bak:hidden_2588  (46B)
+   ADS               testintegrity/xbpt_index_victor_598659.bak:hidden_4782  (46B)
+   ADS               testintegrity/xbpt_index_victor_598659.bak:hidden_5372  (46B)
+   ADS               testintegrity/xbpt_index_victor_598659.bak:hidden_6044  (46B)
+   ADS               testintegrity/xbpt_index_victor_598659.bak:hidden_8436  (46B)
   FILE  (non-res)    testintegrity/xbpt_india_lima_261899.json
   FILE  (non-res)    testintegrity/xbpt_india_record_576445.dat
   FILE  (non-res)    testintegrity/xbpt_india_yankee_623909.dat
   FILE  (non-res)    testintegrity/xbpt_mike_india_351395.cfg
   FILE  (non-res)    testintegrity/xbpt_output_sierra_946792.txt
   FILE  (non-res)    testintegrity/xbpt_report_uniform_305239.json
-   ADS               testintegrity/xbpt_report_uniform_305239.json:hidden_7004  (46B)
    ADS               testintegrity/xbpt_report_uniform_305239.json:hidden_3649  (46B)
+   ADS               testintegrity/xbpt_report_uniform_305239.json:hidden_7004  (46B)
   FILE  (resident)   testintegrity/xbpt_symlink_audit_371491.lnk
   FILE  (resident)   testintegrity/xbpt_symlink_config_639262.lnk
   FILE  (resident)   testintegrity/xbpt_symlink_hotel_610754.lnk
@@ -1218,9 +1218,9 @@ ReFS Directory Tree
    ADS               testintegrity/xbpt_sync_delta_680809.log:hidden_2038  (46B)
   FILE  (non-res)    testintegrity/xbpt_uniform_kilo_835445.log
   FILE  (non-res)    testintegrity/xbpt_uniform_tango_116837.lnk
-   ADS               testintegrity/xbpt_uniform_tango_116837.lnk:hidden_4042  (46B)
-   ADS               testintegrity/xbpt_uniform_tango_116837.lnk:hidden_3359  (46B)
    ADS               testintegrity/xbpt_uniform_tango_116837.lnk:hidden_2435  (46B)
+   ADS               testintegrity/xbpt_uniform_tango_116837.lnk:hidden_3359  (46B)
+   ADS               testintegrity/xbpt_uniform_tango_116837.lnk:hidden_4042  (46B)
   DIR   0x7b3        testspecials
   DIR   0x7c6        testspecials/dir_echo_260113
   DIR   0x7dc        testspecials/dir_echo_260113/dir_data_161769
@@ -1265,10 +1265,10 @@ ReFS Directory Tree
   DIR   0x7e7        testspecials/dir_echo_260113/dir_november_183663/dir_record_577164/dir_report_521909
   DIR   0x7f9        testspecials/dir_echo_260113/dir_november_183663/dir_record_577164/dir_report_521909/dir_audit_771203
   FILE  (non-res)    testspecials/dir_echo_260113/dir_november_183663/dir_record_577164/dir_report_521909/xbpt_audit_output_933962.bin
-   ADS               testspecials/dir_echo_260113/dir_november_183663/dir_record_577164/dir_report_521909/xbpt_audit_output_933962.bin:hidden_9771  (46B)
-   ADS               testspecials/dir_echo_260113/dir_november_183663/dir_record_577164/dir_report_521909/xbpt_audit_output_933962.bin:hidden_6089  (46B)
-   ADS               testspecials/dir_echo_260113/dir_november_183663/dir_record_577164/dir_report_521909/xbpt_audit_output_933962.bin:hidden_6034  (46B)
    ADS               testspecials/dir_echo_260113/dir_november_183663/dir_record_577164/dir_report_521909/xbpt_audit_output_933962.bin:hidden_2209  (46B)
+   ADS               testspecials/dir_echo_260113/dir_november_183663/dir_record_577164/dir_report_521909/xbpt_audit_output_933962.bin:hidden_6034  (46B)
+   ADS               testspecials/dir_echo_260113/dir_november_183663/dir_record_577164/dir_report_521909/xbpt_audit_output_933962.bin:hidden_6089  (46B)
+   ADS               testspecials/dir_echo_260113/dir_november_183663/dir_record_577164/dir_report_521909/xbpt_audit_output_933962.bin:hidden_9771  (46B)
   FILE  (non-res)    testspecials/dir_echo_260113/dir_november_183663/dir_record_577164/dir_report_521909/xbpt_data_yankee_741785.lnk
   FILE  (non-res)    testspecials/dir_echo_260113/dir_november_183663/dir_record_577164/dir_report_521909/xbpt_hardlink_echo_299249.json
   FILE  (non-res)    testspecials/dir_echo_260113/dir_november_183663/dir_record_577164/dir_report_521909/xbpt_hotel_delta_989051.cfg
@@ -1374,17 +1374,17 @@ ReFS Directory Tree
   FILE  (non-res)    testspecials/dir_echo_260113/xbpt_hardlink_whiskey_772507.lnk
   FILE  (non-res)    testspecials/dir_echo_260113/xbpt_india_oscar_568164.tmp
   FILE  (non-res)    testspecials/dir_echo_260113/xbpt_lima_audit_873256.log
-   ADS               testspecials/dir_echo_260113/xbpt_lima_audit_873256.log:hidden_4425  (46B)
-   ADS               testspecials/dir_echo_260113/xbpt_lima_audit_873256.log:hidden_1800  (46B)
    ADS               testspecials/dir_echo_260113/xbpt_lima_audit_873256.log:hidden_1244  (46B)
+   ADS               testspecials/dir_echo_260113/xbpt_lima_audit_873256.log:hidden_1800  (46B)
+   ADS               testspecials/dir_echo_260113/xbpt_lima_audit_873256.log:hidden_4425  (46B)
   FILE  (non-res)    testspecials/dir_echo_260113/xbpt_lima_echo_432966.xml
   FILE  (non-res)    testspecials/dir_echo_260113/xbpt_log_quebec_868926.log
-   ADS               testspecials/dir_echo_260113/xbpt_log_quebec_868926.log:hidden_8351  (46B)
-   ADS               testspecials/dir_echo_260113/xbpt_log_quebec_868926.log:hidden_8186  (46B)
-   ADS               testspecials/dir_echo_260113/xbpt_log_quebec_868926.log:hidden_7885  (46B)
-   ADS               testspecials/dir_echo_260113/xbpt_log_quebec_868926.log:hidden_6636  (46B)
-   ADS               testspecials/dir_echo_260113/xbpt_log_quebec_868926.log:hidden_6225  (46B)
    ADS               testspecials/dir_echo_260113/xbpt_log_quebec_868926.log:hidden_5417  (46B)
+   ADS               testspecials/dir_echo_260113/xbpt_log_quebec_868926.log:hidden_6225  (46B)
+   ADS               testspecials/dir_echo_260113/xbpt_log_quebec_868926.log:hidden_6636  (46B)
+   ADS               testspecials/dir_echo_260113/xbpt_log_quebec_868926.log:hidden_7885  (46B)
+   ADS               testspecials/dir_echo_260113/xbpt_log_quebec_868926.log:hidden_8186  (46B)
+   ADS               testspecials/dir_echo_260113/xbpt_log_quebec_868926.log:hidden_8351  (46B)
   FILE  (non-res)    testspecials/dir_echo_260113/xbpt_log_record_641814.xml
   FILE  (non-res)    testspecials/dir_echo_260113/xbpt_record_tango_546969.txt
   FILE  (resident)   testspecials/dir_echo_260113/xbpt_symlink_alpha_523983.lnk
@@ -1446,9 +1446,9 @@ ReFS Directory Tree
   FILE  (resident)   testspecials/dir_romeo_413583/dir_audit_570908/xbpt_symlink_victor_140323.lnk
   FILE  (resident)   testspecials/dir_romeo_413583/dir_audit_570908/xbpt_symlink_zulu_520629.lnk
   FILE  (non-res)    testspecials/dir_romeo_413583/dir_audit_570908/xbpt_temp_output_635532.lnk
-   ADS               testspecials/dir_romeo_413583/dir_audit_570908/xbpt_temp_output_635532.lnk:hidden_9718  (46B)
-   ADS               testspecials/dir_romeo_413583/dir_audit_570908/xbpt_temp_output_635532.lnk:hidden_9402  (46B)
    ADS               testspecials/dir_romeo_413583/dir_audit_570908/xbpt_temp_output_635532.lnk:hidden_6473  (46B)
+   ADS               testspecials/dir_romeo_413583/dir_audit_570908/xbpt_temp_output_635532.lnk:hidden_9402  (46B)
+   ADS               testspecials/dir_romeo_413583/dir_audit_570908/xbpt_temp_output_635532.lnk:hidden_9718  (46B)
   FILE  (non-res)    testspecials/dir_romeo_413583/dir_audit_570908/xbpt_whiskey_victor_944587.cfg
   DIR   0x7b7        testspecials/dir_romeo_413583/dir_kilo_704584
   DIR   0x7e9        testspecials/dir_romeo_413583/dir_kilo_704584/dir_audit_890453
@@ -1469,9 +1469,9 @@ ReFS Directory Tree
   FILE  (non-res)    testspecials/dir_romeo_413583/dir_kilo_704584/dir_audit_890453/dir_lima_509251/xbpt_hardlink_foxtrot_313066.cfg
   FILE  (non-res)    testspecials/dir_romeo_413583/dir_kilo_704584/dir_audit_890453/dir_lima_509251/xbpt_hardlink_romeo_712778.md
   FILE  (non-res)    testspecials/dir_romeo_413583/dir_kilo_704584/dir_audit_890453/dir_lima_509251/xbpt_romeo_hotel_637270.lnk
-   ADS               testspecials/dir_romeo_413583/dir_kilo_704584/dir_audit_890453/dir_lima_509251/xbpt_romeo_hotel_637270.lnk:hidden_9718  (46B)
-   ADS               testspecials/dir_romeo_413583/dir_kilo_704584/dir_audit_890453/dir_lima_509251/xbpt_romeo_hotel_637270.lnk:hidden_9402  (46B)
    ADS               testspecials/dir_romeo_413583/dir_kilo_704584/dir_audit_890453/dir_lima_509251/xbpt_romeo_hotel_637270.lnk:hidden_6473  (46B)
+   ADS               testspecials/dir_romeo_413583/dir_kilo_704584/dir_audit_890453/dir_lima_509251/xbpt_romeo_hotel_637270.lnk:hidden_9402  (46B)
+   ADS               testspecials/dir_romeo_413583/dir_kilo_704584/dir_audit_890453/dir_lima_509251/xbpt_romeo_hotel_637270.lnk:hidden_9718  (46B)
   FILE  (non-res)    testspecials/dir_romeo_413583/dir_kilo_704584/dir_audit_890453/dir_lima_509251/xbpt_romeo_lima_920456.bin
   DIR   0x7bf        testspecials/dir_romeo_413583/dir_kilo_704584/dir_audit_890453/dir_report_815374
   DIR   0x7f2        testspecials/dir_romeo_413583/dir_kilo_704584/dir_audit_890453/dir_report_815374/dir_config_105863
@@ -1498,8 +1498,8 @@ ReFS Directory Tree
   FILE  (non-res)    testspecials/dir_romeo_413583/dir_kilo_704584/dir_audit_890453/dir_report_815374/dir_papa_331610/xbpt_victor_papa_192283.xml
   FILE  (non-res)    testspecials/dir_romeo_413583/dir_kilo_704584/dir_audit_890453/dir_report_815374/dir_papa_331610/xbpt_zulu_delta_352801.bin
   FILE  (non-res)    testspecials/dir_romeo_413583/dir_kilo_704584/dir_audit_890453/dir_report_815374/xbpt_gamma_india_998655.txt
-   ADS               testspecials/dir_romeo_413583/dir_kilo_704584/dir_audit_890453/dir_report_815374/xbpt_gamma_india_998655.txt:hidden_3515  (46B)
    ADS               testspecials/dir_romeo_413583/dir_kilo_704584/dir_audit_890453/dir_report_815374/xbpt_gamma_india_998655.txt:hidden_2059  (46B)
+   ADS               testspecials/dir_romeo_413583/dir_kilo_704584/dir_audit_890453/dir_report_815374/xbpt_gamma_india_998655.txt:hidden_3515  (46B)
   FILE  (non-res)    testspecials/dir_romeo_413583/dir_kilo_704584/dir_audit_890453/dir_report_815374/xbpt_hardlink_alpha_499266.log
   FILE  (non-res)    testspecials/dir_romeo_413583/dir_kilo_704584/dir_audit_890453/dir_report_815374/xbpt_hardlink_archive_353087.xml
   FILE  (non-res)    testspecials/dir_romeo_413583/dir_kilo_704584/dir_audit_890453/dir_report_815374/xbpt_hardlink_data_733507.log
@@ -1510,10 +1510,10 @@ ReFS Directory Tree
   FILE  (non-res)    testspecials/dir_romeo_413583/dir_kilo_704584/dir_audit_890453/dir_report_815374/xbpt_hotel_romeo_449238.xml
    ADS               testspecials/dir_romeo_413583/dir_kilo_704584/dir_audit_890453/dir_report_815374/xbpt_hotel_romeo_449238.xml:hidden_5259  (46B)
   FILE  (non-res)    testspecials/dir_romeo_413583/dir_kilo_704584/dir_audit_890453/dir_report_815374/xbpt_index_kilo_795802.md
-   ADS               testspecials/dir_romeo_413583/dir_kilo_704584/dir_audit_890453/dir_report_815374/xbpt_index_kilo_795802.md:hidden_9056  (46B)
-   ADS               testspecials/dir_romeo_413583/dir_kilo_704584/dir_audit_890453/dir_report_815374/xbpt_index_kilo_795802.md:hidden_7868  (46B)
-   ADS               testspecials/dir_romeo_413583/dir_kilo_704584/dir_audit_890453/dir_report_815374/xbpt_index_kilo_795802.md:hidden_7539  (46B)
    ADS               testspecials/dir_romeo_413583/dir_kilo_704584/dir_audit_890453/dir_report_815374/xbpt_index_kilo_795802.md:hidden_1786  (46B)
+   ADS               testspecials/dir_romeo_413583/dir_kilo_704584/dir_audit_890453/dir_report_815374/xbpt_index_kilo_795802.md:hidden_7539  (46B)
+   ADS               testspecials/dir_romeo_413583/dir_kilo_704584/dir_audit_890453/dir_report_815374/xbpt_index_kilo_795802.md:hidden_7868  (46B)
+   ADS               testspecials/dir_romeo_413583/dir_kilo_704584/dir_audit_890453/dir_report_815374/xbpt_index_kilo_795802.md:hidden_9056  (46B)
   FILE  (non-res)    testspecials/dir_romeo_413583/dir_kilo_704584/dir_audit_890453/dir_report_815374/xbpt_record_lima_304830.dat
   FILE  (non-res)    testspecials/dir_romeo_413583/dir_kilo_704584/dir_audit_890453/dir_report_815374/xbpt_sierra_mike_629940.md
    ADS               testspecials/dir_romeo_413583/dir_kilo_704584/dir_audit_890453/dir_report_815374/xbpt_sierra_mike_629940.md:hidden_7429  (46B)
@@ -1595,9 +1595,9 @@ ReFS Directory Tree
   FILE  (resident)   testspecials/dir_romeo_413583/dir_kilo_704584/dir_report_123351/xbpt_symlink_tango_915252.lnk
   FILE  (resident)   testspecials/dir_romeo_413583/dir_kilo_704584/dir_report_123351/xbpt_symlink_tango_964419.lnk
   FILE  (non-res)    testspecials/dir_romeo_413583/dir_kilo_704584/dir_report_123351/xbpt_sync_zulu_909804.cfg
-   ADS               testspecials/dir_romeo_413583/dir_kilo_704584/dir_report_123351/xbpt_sync_zulu_909804.cfg:hidden_9953  (46B)
-   ADS               testspecials/dir_romeo_413583/dir_kilo_704584/dir_report_123351/xbpt_sync_zulu_909804.cfg:hidden_2975  (46B)
    ADS               testspecials/dir_romeo_413583/dir_kilo_704584/dir_report_123351/xbpt_sync_zulu_909804.cfg:hidden_2955  (46B)
+   ADS               testspecials/dir_romeo_413583/dir_kilo_704584/dir_report_123351/xbpt_sync_zulu_909804.cfg:hidden_2975  (46B)
+   ADS               testspecials/dir_romeo_413583/dir_kilo_704584/dir_report_123351/xbpt_sync_zulu_909804.cfg:hidden_9953  (46B)
   FILE  (non-res)    testspecials/dir_romeo_413583/dir_kilo_704584/dir_report_123351/xbpt_whiskey_report_114009.xml
   DIR   0x7bb        testspecials/dir_romeo_413583/dir_kilo_704584/dir_temp_947981
   DIR   0x7c2        testspecials/dir_romeo_413583/dir_kilo_704584/dir_temp_947981/dir_mike_981731
@@ -1630,8 +1630,8 @@ ReFS Directory Tree
    ADS               testspecials/dir_romeo_413583/dir_kilo_704584/dir_temp_947981/dir_papa_141573/dir_temp_742939/dir_cache_983199/xbpt_hotel_draft_601421.tmp:hidden_6604  (46B)
   FILE  (non-res)    testspecials/dir_romeo_413583/dir_kilo_704584/dir_temp_947981/dir_papa_141573/dir_temp_742939/dir_cache_983199/xbpt_output_november_364279.txt
   FILE  (non-res)    testspecials/dir_romeo_413583/dir_kilo_704584/dir_temp_947981/dir_papa_141573/dir_temp_742939/dir_cache_983199/xbpt_papa_beta_557122.lnk
-   ADS               testspecials/dir_romeo_413583/dir_kilo_704584/dir_temp_947981/dir_papa_141573/dir_temp_742939/dir_cache_983199/xbpt_papa_beta_557122.lnk:hidden_6934  (46B)
    ADS               testspecials/dir_romeo_413583/dir_kilo_704584/dir_temp_947981/dir_papa_141573/dir_temp_742939/dir_cache_983199/xbpt_papa_beta_557122.lnk:hidden_2624  (46B)
+   ADS               testspecials/dir_romeo_413583/dir_kilo_704584/dir_temp_947981/dir_papa_141573/dir_temp_742939/dir_cache_983199/xbpt_papa_beta_557122.lnk:hidden_6934  (46B)
   FILE  (non-res)    testspecials/dir_romeo_413583/dir_kilo_704584/dir_temp_947981/dir_papa_141573/dir_temp_742939/dir_cache_983199/xbpt_symlink_echo_341188.lnk
   DIR   0x7c3        testspecials/dir_romeo_413583/dir_kilo_704584/dir_temp_947981/dir_papa_141573/dir_temp_742939/dir_gamma_421188
   DIR   0x7ba        testspecials/dir_romeo_413583/dir_kilo_704584/dir_temp_947981/dir_papa_141573/dir_temp_742939/dir_gamma_421188/dir_uniform_641683
@@ -1641,8 +1641,8 @@ ReFS Directory Tree
   FILE  (non-res)    testspecials/dir_romeo_413583/dir_kilo_704584/dir_temp_947981/dir_papa_141573/dir_temp_742939/dir_gamma_421188/dir_uniform_641683/dir_echo_253572/xbpt_hardlink_mike_998837.log
   FILE  (non-res)    testspecials/dir_romeo_413583/dir_kilo_704584/dir_temp_947981/dir_papa_141573/dir_temp_742939/dir_gamma_421188/dir_uniform_641683/dir_echo_253572/xbpt_hardlink_quebec_835914.cfg
   FILE  (non-res)    testspecials/dir_romeo_413583/dir_kilo_704584/dir_temp_947981/dir_papa_141573/dir_temp_742939/dir_gamma_421188/dir_uniform_641683/dir_echo_253572/xbpt_oscar_log_763652.csv
-   ADS               testspecials/dir_romeo_413583/dir_kilo_704584/dir_temp_947981/dir_papa_141573/dir_temp_742939/dir_gamma_421188/dir_uniform_641683/dir_echo_253572/xbpt_oscar_log_763652.csv:hidden_5016  (46B)
    ADS               testspecials/dir_romeo_413583/dir_kilo_704584/dir_temp_947981/dir_papa_141573/dir_temp_742939/dir_gamma_421188/dir_uniform_641683/dir_echo_253572/xbpt_oscar_log_763652.csv:hidden_2330  (46B)
+   ADS               testspecials/dir_romeo_413583/dir_kilo_704584/dir_temp_947981/dir_papa_141573/dir_temp_742939/dir_gamma_421188/dir_uniform_641683/dir_echo_253572/xbpt_oscar_log_763652.csv:hidden_5016  (46B)
   FILE  (resident)   testspecials/dir_romeo_413583/dir_kilo_704584/dir_temp_947981/dir_papa_141573/dir_temp_742939/dir_gamma_421188/dir_uniform_641683/dir_echo_253572/xbpt_symlink_uniform_120393.lnk
   FILE  (non-res)    testspecials/dir_romeo_413583/dir_kilo_704584/dir_temp_947981/dir_papa_141573/dir_temp_742939/dir_gamma_421188/dir_uniform_641683/dir_echo_253572/xbpt_zulu_zulu_280628.tmp
   FILE  (non-res)    testspecials/dir_romeo_413583/dir_kilo_704584/dir_temp_947981/dir_papa_141573/dir_temp_742939/dir_gamma_421188/dir_uniform_641683/xbpt_backup_oscar_154147.tmp
@@ -1687,18 +1687,18 @@ ReFS Directory Tree
   FILE  (resident)   testspecials/dir_romeo_413583/dir_kilo_704584/dir_temp_947981/dir_papa_141573/dir_temp_742939/xbpt_audit_sierra_615632.lnk
    ADS               testspecials/dir_romeo_413583/dir_kilo_704584/dir_temp_947981/dir_papa_141573/dir_temp_742939/xbpt_audit_sierra_615632.lnk:hidden_1414  (46B)
   FILE  (non-res)    testspecials/dir_romeo_413583/dir_kilo_704584/dir_temp_947981/dir_papa_141573/dir_temp_742939/xbpt_hardlink_cache_606636.cfg
-   ADS               testspecials/dir_romeo_413583/dir_kilo_704584/dir_temp_947981/dir_papa_141573/dir_temp_742939/xbpt_hardlink_cache_606636.cfg:hidden_7886  (46B)
-   ADS               testspecials/dir_romeo_413583/dir_kilo_704584/dir_temp_947981/dir_papa_141573/dir_temp_742939/xbpt_hardlink_cache_606636.cfg:hidden_2353  (46B)
    ADS               testspecials/dir_romeo_413583/dir_kilo_704584/dir_temp_947981/dir_papa_141573/dir_temp_742939/xbpt_hardlink_cache_606636.cfg:hidden_1120  (46B)
+   ADS               testspecials/dir_romeo_413583/dir_kilo_704584/dir_temp_947981/dir_papa_141573/dir_temp_742939/xbpt_hardlink_cache_606636.cfg:hidden_2353  (46B)
+   ADS               testspecials/dir_romeo_413583/dir_kilo_704584/dir_temp_947981/dir_papa_141573/dir_temp_742939/xbpt_hardlink_cache_606636.cfg:hidden_7886  (46B)
   FILE  (non-res)    testspecials/dir_romeo_413583/dir_kilo_704584/dir_temp_947981/dir_papa_141573/dir_temp_742939/xbpt_hardlink_oscar_805467.xml
   FILE  (non-res)    testspecials/dir_romeo_413583/dir_kilo_704584/dir_temp_947981/dir_papa_141573/dir_temp_742939/xbpt_november_victor_594089.cfg
    ADS               testspecials/dir_romeo_413583/dir_kilo_704584/dir_temp_947981/dir_papa_141573/dir_temp_742939/xbpt_november_victor_594089.cfg:hidden_3005  (46B)
   FILE  (non-res)    testspecials/dir_romeo_413583/dir_kilo_704584/dir_temp_947981/dir_papa_141573/dir_temp_742939/xbpt_quebec_index_959677.ini
   FILE  (non-res)    testspecials/dir_romeo_413583/dir_kilo_704584/dir_temp_947981/dir_papa_141573/dir_temp_742939/xbpt_symlink_november_553756.lnk
   FILE  (resident)   testspecials/dir_romeo_413583/dir_kilo_704584/dir_temp_947981/dir_papa_141573/dir_temp_742939/xbpt_symlink_uniform_191290.lnk
-   ADS               testspecials/dir_romeo_413583/dir_kilo_704584/dir_temp_947981/dir_papa_141573/dir_temp_742939/xbpt_symlink_uniform_191290.lnk:hidden_8529  (46B)
-   ADS               testspecials/dir_romeo_413583/dir_kilo_704584/dir_temp_947981/dir_papa_141573/dir_temp_742939/xbpt_symlink_uniform_191290.lnk:hidden_8367  (46B)
    ADS               testspecials/dir_romeo_413583/dir_kilo_704584/dir_temp_947981/dir_papa_141573/dir_temp_742939/xbpt_symlink_uniform_191290.lnk:hidden_3888  (46B)
+   ADS               testspecials/dir_romeo_413583/dir_kilo_704584/dir_temp_947981/dir_papa_141573/dir_temp_742939/xbpt_symlink_uniform_191290.lnk:hidden_8367  (46B)
+   ADS               testspecials/dir_romeo_413583/dir_kilo_704584/dir_temp_947981/dir_papa_141573/dir_temp_742939/xbpt_symlink_uniform_191290.lnk:hidden_8529  (46B)
   FILE  (resident)   testspecials/dir_romeo_413583/dir_kilo_704584/dir_temp_947981/dir_papa_141573/dir_temp_742939/xbpt_symlink_uniform_952278.lnk
   FILE  (non-res)    testspecials/dir_romeo_413583/dir_kilo_704584/dir_temp_947981/dir_papa_141573/dir_temp_742939/xbpt_sync_beta_671514.lnk
   FILE  (non-res)    testspecials/dir_romeo_413583/dir_kilo_704584/dir_temp_947981/dir_papa_141573/xbpt_cache_sierra_236272.cfg
@@ -1741,9 +1741,9 @@ ReFS Directory Tree
   FILE  (non-res)    testspecials/dir_romeo_413583/dir_kilo_704584/dir_temp_947981/xbpt_hardlink_quebec_106843.xml
   FILE  (non-res)    testspecials/dir_romeo_413583/dir_kilo_704584/dir_temp_947981/xbpt_hardlink_sync_448917.bak
   FILE  (non-res)    testspecials/dir_romeo_413583/dir_kilo_704584/dir_temp_947981/xbpt_kilo_temp_468534.cfg
-   ADS               testspecials/dir_romeo_413583/dir_kilo_704584/dir_temp_947981/xbpt_kilo_temp_468534.cfg:hidden_6424  (46B)
-   ADS               testspecials/dir_romeo_413583/dir_kilo_704584/dir_temp_947981/xbpt_kilo_temp_468534.cfg:hidden_5092  (46B)
    ADS               testspecials/dir_romeo_413583/dir_kilo_704584/dir_temp_947981/xbpt_kilo_temp_468534.cfg:hidden_2866  (46B)
+   ADS               testspecials/dir_romeo_413583/dir_kilo_704584/dir_temp_947981/xbpt_kilo_temp_468534.cfg:hidden_5092  (46B)
+   ADS               testspecials/dir_romeo_413583/dir_kilo_704584/dir_temp_947981/xbpt_kilo_temp_468534.cfg:hidden_6424  (46B)
   FILE  (non-res)    testspecials/dir_romeo_413583/dir_kilo_704584/dir_temp_947981/xbpt_oscar_draft_108047.xml
   FILE  (non-res)    testspecials/dir_romeo_413583/dir_kilo_704584/dir_temp_947981/xbpt_papa_index_753175.lnk
   FILE  (non-res)    testspecials/dir_romeo_413583/dir_kilo_704584/dir_temp_947981/xbpt_sierra_november_363267.tmp
@@ -1754,8 +1754,8 @@ ReFS Directory Tree
   FILE  (resident)   testspecials/dir_romeo_413583/dir_kilo_704584/dir_temp_947981/xbpt_symlink_foxtrot_159862.lnk
   FILE  (resident)   testspecials/dir_romeo_413583/dir_kilo_704584/dir_temp_947981/xbpt_symlink_output_941336.lnk
   FILE  (non-res)    testspecials/dir_romeo_413583/dir_kilo_704584/dir_temp_947981/xbpt_trace_foxtrot_950877.dat
-   ADS               testspecials/dir_romeo_413583/dir_kilo_704584/dir_temp_947981/xbpt_trace_foxtrot_950877.dat:hidden_9146  (46B)
    ADS               testspecials/dir_romeo_413583/dir_kilo_704584/dir_temp_947981/xbpt_trace_foxtrot_950877.dat:hidden_6936  (46B)
+   ADS               testspecials/dir_romeo_413583/dir_kilo_704584/dir_temp_947981/xbpt_trace_foxtrot_950877.dat:hidden_9146  (46B)
   FILE  (non-res)    testspecials/dir_romeo_413583/dir_kilo_704584/dir_temp_947981/xbpt_whiskey_victor_938539.tmp
   FILE  (non-res)    testspecials/dir_romeo_413583/dir_kilo_704584/dir_temp_947981/xbpt_yankee_hotel_977615.json
   FILE  (non-res)    testspecials/dir_romeo_413583/dir_kilo_704584/dir_temp_947981/xbpt_yankee_log_245712.xml
@@ -1839,8 +1839,8 @@ ReFS Directory Tree
   FILE  (non-res)    testspecials/dir_romeo_413583/xbpt_hardlink_tango_845190.ini
   FILE  (non-res)    testspecials/dir_romeo_413583/xbpt_hardlink_temp_924985.xml
   FILE  (non-res)    testspecials/dir_romeo_413583/xbpt_log_trace_977459.dat
-   ADS               testspecials/dir_romeo_413583/xbpt_log_trace_977459.dat:hidden_4944  (46B)
    ADS               testspecials/dir_romeo_413583/xbpt_log_trace_977459.dat:hidden_4290  (46B)
+   ADS               testspecials/dir_romeo_413583/xbpt_log_trace_977459.dat:hidden_4944  (46B)
   FILE  (non-res)    testspecials/dir_romeo_413583/xbpt_november_oscar_193407.log
   FILE  (non-res)    testspecials/dir_romeo_413583/xbpt_oscar_kilo_205997.json
    ADS               testspecials/dir_romeo_413583/xbpt_oscar_kilo_205997.json:hidden_3403  (46B)
@@ -1855,10 +1855,10 @@ ReFS Directory Tree
   FILE  (non-res)    testspecials/xbpt_backup_backup_285884.cfg
   FILE  (non-res)    testspecials/xbpt_draft_quebec_153387.txt
   FILE  (non-res)    testspecials/xbpt_echo_audit_435989.cfg
-   ADS               testspecials/xbpt_echo_audit_435989.cfg:hidden_9092  (46B)
-   ADS               testspecials/xbpt_echo_audit_435989.cfg:hidden_6888  (46B)
-   ADS               testspecials/xbpt_echo_audit_435989.cfg:hidden_5564  (46B)
    ADS               testspecials/xbpt_echo_audit_435989.cfg:hidden_4859  (46B)
+   ADS               testspecials/xbpt_echo_audit_435989.cfg:hidden_5564  (46B)
+   ADS               testspecials/xbpt_echo_audit_435989.cfg:hidden_6888  (46B)
+   ADS               testspecials/xbpt_echo_audit_435989.cfg:hidden_9092  (46B)
   FILE  (non-res)    testspecials/xbpt_hardlink_archive_469036.xml
   FILE  (non-res)    testspecials/xbpt_hardlink_index_242723.lnk
   FILE  (non-res)    testspecials/xbpt_hardlink_lima_786133.lnk
@@ -1870,19 +1870,19 @@ ReFS Directory Tree
   FILE  (resident)   testspecials/xbpt_index_beta_458108.bin
    ADS               testspecials/xbpt_index_beta_458108.bin:hidden_6085  (46B)
   FILE  (resident)   testspecials/xbpt_index_temp_559712.cfg
-   ADS               testspecials/xbpt_index_temp_559712.cfg:hidden_5866  (46B)
-   ADS               testspecials/xbpt_index_temp_559712.cfg:hidden_5542  (46B)
-   ADS               testspecials/xbpt_index_temp_559712.cfg:hidden_2876  (46B)
    ADS               testspecials/xbpt_index_temp_559712.cfg:hidden_2553  (46B)
+   ADS               testspecials/xbpt_index_temp_559712.cfg:hidden_2876  (46B)
+   ADS               testspecials/xbpt_index_temp_559712.cfg:hidden_5542  (46B)
+   ADS               testspecials/xbpt_index_temp_559712.cfg:hidden_5866  (46B)
   FILE  (non-res)    testspecials/xbpt_lima_temp_390480.md
   FILE  (non-res)    testspecials/xbpt_mike_mike_872519.cfg
   FILE  (non-res)    testspecials/xbpt_november_archive_100866.cfg
   FILE  (non-res)    testspecials/xbpt_november_yankee_740549.bin
   FILE  (resident)   testspecials/xbpt_oscar_whiskey_503440.md
   FILE  (non-res)    testspecials/xbpt_oscar_zulu_627251.tmp
-   ADS               testspecials/xbpt_oscar_zulu_627251.tmp:hidden_9718  (46B)
-   ADS               testspecials/xbpt_oscar_zulu_627251.tmp:hidden_9402  (46B)
    ADS               testspecials/xbpt_oscar_zulu_627251.tmp:hidden_6473  (46B)
+   ADS               testspecials/xbpt_oscar_zulu_627251.tmp:hidden_9402  (46B)
+   ADS               testspecials/xbpt_oscar_zulu_627251.tmp:hidden_9718  (46B)
   FILE  (non-res)    testspecials/xbpt_output_temp_160123.log
   FILE  (non-res)    testspecials/xbpt_record_beta_701778.txt
   FILE  (non-res)    testspecials/xbpt_romeo_november_390172.xml

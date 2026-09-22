@@ -22,8 +22,8 @@ to physical LCN (PLCN). Roots #7 and #8 are a failover pair holding identical co
 | 0x14 | 4 | Container flags (u32) | See Container flags below |
 | 0x18 | 4 | Clusters per container (CPC) (u32) | 16,384 (4 KiB) or 1,024 (64 KiB) |
 | 0x1C | 4 | Padding | — |
-| 0x20 | 8 | Free clusters (u64) | Available clusters in this container |
-| 0x28 | 4 | Free clusters (count) (u32) | The high dword 0x2C..0x2F is always 0, so this is a u32. |
+| 0x20 | 8 | Free clusters (u64) | **All-ones (`0xFFFFFFFFFFFFFFFF`) is a sentinel, not a count** — it reads that way on **762,252 of 797,837** rows: every row of all 90 v3.14 volumes (except the two upgraded `win10to11refs4g` images, whose 63 rows each keep real v3.4 counts) and every row on the v3.7, v3.9 and v3.10 volumes. On the 12 native v3.4 volumes it is never the sentinel (0 of 35,459). Check for the sentinel before treating this as a number |
+| 0x28 | 4 | Free clusters (count) (u32) | On v3.4 this and `+0x20` are **not the same number**: they agree on 35,391 rows and differ on 68, and the differing rows are large enough to move volume totals (summed over the 12 v3.4 volumes, `+0x20` = 5,515,590 against `+0x28` = 5,227,204). The high dword 0x2C..0x2F is always 0, so this is a u32. |
 | 0x30 | 32 | Reserved / uncharacterised | — |
 | 0x50 | 64 | Integrity checksum buffer | 4 × 16-byte slots |
 | 0x90 | 8 | Physical start cluster (u64) | **Only valid for 160-byte rows** |
@@ -70,6 +70,13 @@ container_index     = vlcn >> shift
 offset_in_container = vlcn & mask
 physical_LCN        = container_map[container_index] + offset_in_container
 ```
+
+`container_map` is keyed by the **Container-Table row key** — the Container ID `u64` at row key `+0x00` —
+and its value is that row's physical start cluster. Container ids start at **2** (measured: the minimum key
+is 2 on all 113 bootstrappable volumes), so `container_index` is that id directly, not an index into a
+zero-based array. This is the step the pseudocode previously left undefined; `forefst` makes the same
+bridge internally (`_parse_ct_page` stores `result[le64(kd, 0)]`, and the translator looks up
+`map[vlcn >> shift]`).
 
 Or equivalently, once the container's physical start is known:
 
@@ -150,12 +157,18 @@ details: [Compression](../concepts/compression.md).
 A Container-Table leaf row on a CRC64 / 4 KiB-cluster v3.14 image (160-byte value), mapping virtual container **3** to its physical location:
 
 ```text
-header:    b0 00 00 00 10 00 10 00  00 00 20 00 a0 00 00 00   <- row_size 0xb0; key_len/val_len 0x10/0xa0
+header:    b0 00 00 00 10 00 10 00  00 00 10 00 a0 00 00 00   <- row_size 0xb0; key_off/key_len 0x10/0x10; value_off/value_len 0x10/0xa0
 key:       03 00 00 00 00 00 00 00  00 00 00 00 01 00 00 00   <- container id = 3
 val+0x00:  03 00 00 00 ...                                    <- container id (echoed)
 val+0x18:  00 40 00 00                                        <- cluster count = 0x4000 (16384 = clusters/container)
 val+0x90:  00 c0 01 00 00 00 00 00                            <- physical start cluster (PLCN) = 0x1c000 (114688)
 ```
+
+The **value offset is at row+0x0A and reads `0x10`** — the value begins immediately after the 16-byte key,
+so `key_off == value_off == 0x10`. Measured over **136,664 Container-Table leaf rows** on four volumes
+(`win11refsmini`, `win10refsmini`, `win11refs2tmillionsofactions`, `win11refs2t64ksha256checksums`):
+`(key_off, key_len, value_off, value_len, row_size)` is `(0x10, 0x10, 0x10, 0xa0, 0xb0)` on 69,552 rows and
+`(0x10, 0x10, 0x10, 0xe0, 0xf0)` on 67,112 (64 KiB / SHA-256) — **0 rows carry value_off 0x20**.
 
 Virtual container 3 resolves to physical cluster **114688**, so any VLCN inside it translates as `PLCN = 114688 + (vlcn mod 16384)`. The value is 160 bytes on this CRC64 / 4 KiB-cluster volume (it grows to 224 bytes on SHA-256 or 64 KiB-cluster volumes), and the physical start cluster is read **position-dependently** at `value_end − 16` — a fixed offset fails across the two size classes.
 

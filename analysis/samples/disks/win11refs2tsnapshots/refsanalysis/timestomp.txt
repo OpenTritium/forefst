@@ -4,16 +4,16 @@ ReFS Timestamp-Anomaly (Timestomp) Detection
   Image:           win11refs2tsnapshots.raw  (ReFS 3.14)
   Volume created:  2026-05-16 16:50:42
   Volume modified: 2026-05-16 16:50:44
-  USN journal:     absent (intrinsic signals only)
+  USN journal:     absent or unreadable (intrinsic signals only)
   Files examined:  270
-  Flagged:         54  (HIGH 1 / MEDIUM 0 / LOW 0 / INFO 53 — INFO = ambiguous: a timestamp-preserving copy and a backdated creation produce the same signals; corroborate with USN)
+  Flagged:         55  (HIGH 2 / MEDIUM 0 / LOW 0 / INFO 53 — INFO = ambiguous: a timestamp-preserving copy and a backdated creation produce the same signals; corroborate with USN)
 
   This flags timestamps that LOOK anomalous — it is investigative INFORMATION, not proof of
   tampering. Weigh the BASIS of each row: a journal/hardlink signal is authoritative; an
   intrinsic ($SI-only) signal is a heuristic that also fires on legitimate timestamp-preserving
   copies/restores. Tiers, exactly as timestomp_verdict() decides them:
-    HIGH   — an AUTHORITATIVE corroboration: the change journal, or a hard-link sibling that
-             preserves the true birth. A count of intrinsic signals never reaches HIGH.
+    HIGH   — an AUTHORITATIVE corroboration: the change journal, or a disagreement between
+             two of the file's own hard-link names. A count of intrinsic signals never reaches HIGH.
     MEDIUM — CHANGE_LATE without PRE_FORMAT (created on THIS volume, metadata altered later),
              or FUTURE (created after the volume's last metadata write).
     INFO   — every signal present is one a timestamp-preserving copy also produces
@@ -25,6 +25,8 @@ ReFS Timestamp-Anomaly (Timestomp) Detection
   ------------------------------------------------------------------------------------------------
   HIGH   journal/link  2022-08-02 07:16:28   2026-05-16 16:51:56   test/elvis_dir_record_449015/elvis_dir_lima_252141/elvis_dir_oscar_306778/xbpt_romeo_output_531365.cfg
          signals: PRE_FORMAT, HARDLINK_MACB_MISMATCH
+  HIGH   journal/link  2026-05-16 16:51:51   2026-05-16 16:51:54   test/elvis_dir_record_449015/elvis_dir_papa_104235/elvis_dir_sync_718743/elvis_dir_gamma_109016/elvis_dir_zulu_984398/elvis_dir_cache_558805/xbpt_hardlink_audit_219848.cfg
+         signals: HARDLINK_MACB_MISMATCH
 
   (0 MEDIUM + 0 LOW row(s) hidden — `--min MEDIUM` / `--min LOW` to show; CSV/JSON already include every tier.)
 
@@ -32,9 +34,9 @@ ReFS Timestamp-Anomaly (Timestomp) Detection
     [AUTHORITATIVE]
       USN_BASIC_INFO_CHANGE  the USN journal recorded a deliberate basic-info edit (no content change)
       USN_CREATE_MISMATCH    $SI created differs from the FILE_CREATE journal record (true birth known)
-      HARDLINK_MACB_MISMATCH one hard-link name's $SI created diverges from a sibling's (ReFS per-name
-                             MACB); the LATEST sibling created is the authentic birth — only the
-                             back-dated name is flagged, never the clean sibling
+      HARDLINK_MACB_MISMATCH one hard-link name's $SI created diverges from another's (ReFS per-name
+                             MACB). Nothing routine produces this; which name is authentic is NOT
+                             established, and its absence means nothing
     [HEURISTIC — $SI only, corroborate]
       CHANGE_LATE            $SI change-time post-dates created/modified (SetFileTime/PowerShell/.NET
                              can't reach change-time) — defeated by a native-API/raw-disk stomp

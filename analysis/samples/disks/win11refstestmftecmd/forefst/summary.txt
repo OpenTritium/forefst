@@ -16,21 +16,22 @@ ReFS Volume Fast Extended Summary
 
 ------------------------------------------------------------------------------
 Bootstrap structures
+  (offsets below are ABSOLUTE in the image file; partition starts at 0x1000000)
 ------------------------------------------------------------------------------
-  VBR primary      LBA 0 (offset 0x0)  — checksum OK
+  VBR primary      LBA 0 (offset 0x1000000)  — checksum OK
       93e5df98b114527d4dd38ac0d92f031cb8594559b1572e00d835b41fe82c5ca0
-  SUPB primary     LCN 0x1e (offset 0x1e000)  — checksum OK
+  SUPB primary     LCN 0x1e (offset 0x101e000)  — checksum OK
       b6e9c6ccaafb96547a67b33b403f9a1fc6f5182458a76cb5a3fb42c62418adbf
-  CHKP primary     LCN 0x1e3f4 (offset 0x1e3f4000)  — checksum OK, vclock=617
-      7c0085fd7770ce621df1c35c62f1ab3ee633303b04d38812a1b796093c2aef3a
+  CHKP primary     LCN 0x1e3f4 (offset 0x1f3f4000)  — checksum OK, vclock=617
+      b08c252efb91d3c4bbe91a95a935c3077ff529bc94c4679f96a9e3d0ba4ebd70
 ------------------------------------------------------------------------------
-  VBR backup       LBA 8257535 (off 0xfbfffe00)  — = primary, checksum OK
+  VBR backup       LBA 8257535 (off 0xfcfffe00)  — = primary, checksum OK
       93e5df98b114527d4dd38ac0d92f031cb8594559b1572e00d835b41fe82c5ca0
-  SUPB backup      LCN 0xfbffd (offset 0xfbffd000)  — checksum OK
+  SUPB backup      LCN 0xfbffd (offset 0xfcffd000)  — checksum OK
       ca8aeb74f86d84d2cec10e4007db6d1aa76d530707c8bba36267537726d53c03
-  SUPB backup      LCN 0xfbffe (offset 0xfbffe000)  — checksum OK
+  SUPB backup      LCN 0xfbffe (offset 0xfcffe000)  — checksum OK
       0a6bfc2f4f0771b85e6b7a95a5029b1f788e231e785d8ebfadfed59bfb821bb7
-  CHKP secondary   LCN 0x2874 (offset 0x2874000)  — checksum OK, vclock=616
+  CHKP secondary   LCN 0x2874 (offset 0x3874000)  — checksum OK, vclock=616
       fabe1c3f8d8fee799ce64abc79fd7c57556b4d7a89a7fe9eee2d25827e46fba2
 
 note: the SUPB copies hash differently by design (each carries its own LCN +
@@ -87,7 +88,7 @@ File System Content (from directory walk)
 ------------------------------------------------------------------------------
   Directories:        237
   Files:              1507 (274 inline + 1233 extent-backed)
-  Total file size:    1.4 GB
+  Total file size:    1.3 GB
   Oldest timestamp:   2021-05-18 07:16:04.9990009
   Newest timestamp:   2026-05-23 11:15:52.3435495
   Encrypted files:    0

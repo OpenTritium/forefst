@@ -215,7 +215,7 @@ populated on any given row.
 : A volume originally formatted under an older version and later mounted on a newer OS. Does **not** carry the native-format CHKP flag — which is how an upgrade is told apart from a native volume. See [Version Detection](concepts/version_detection.md).
 
 **USN** (Update Sequence Number)
-: A monotonically increasing 64-bit offset into the $J data stream. Each journal record is written at the current USN, which then advances by the record size. The value serves as both a byte offset and a global ordering identifier for change events.
+: A 64-bit offset into the $J data stream, monotonically increasing **within one journal instance**. Each journal record is written at the current USN, which then advances by the record size. It is **not** unique for the life of the volume: re-creating the journal restarts numbering at 0 while the UsnJournalId stays the same, so a USN from before the restart can name a different record afterwards.
 
 **USN_RECORD_V3**
 : The record format ReFS uses for journal entries. Differs from NTFS's V2 by using 128-bit file IDs (directory OID + entry index). Minimum record size is 80 bytes, 8-byte aligned within the $J stream.

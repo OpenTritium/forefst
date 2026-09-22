@@ -27,8 +27,8 @@ File Data Locations
             run: fvcn=0 VLCN=0x6712706 PLCN=0x337a706 clusters=1 disk=0x337b706000
             run: fvcn=1 VLCN=0x6711828 PLCN=0x3379828 clusters=34 disk=0x337a828000
             run: fvcn=35 VLCN=0x671184a PLCN=0x337984a clusters=1 disk=0x337a84a000
-            run: fvcn=37 VLCN=0x6711c63 PLCN=0x3379c63 clusters=9 disk=0x337ac63000
             run: fvcn=36 VLCN=0x6711c62 PLCN=0x3379c62 clusters=1 disk=0x337ac62000
+            run: fvcn=37 VLCN=0x6711c63 PLCN=0x3379c63 clusters=9 disk=0x337ac63000
             (extents in remote OID 0x710)
   EXTENT    test/xbpt_config_hotel_558589.txt
             record=split, size=192688, attrs=Archive, extents=2, clusters=48
@@ -63,8 +63,8 @@ File Data Locations
             created=2026-05-16 16:51:57
             run: fvcn=0 VLCN=0x6718ebb PLCN=0x337cebb clusters=1 disk=0x337debb000
             run: fvcn=1 VLCN=0x67132e7 PLCN=0x337b2e7 clusters=42 disk=0x337c2e7000
-            run: fvcn=44 VLCN=0x6713723 PLCN=0x337b723 clusters=7 disk=0x337c723000
             run: fvcn=43 VLCN=0x6713311 PLCN=0x337b311 clusters=1 disk=0x337c311000
+            run: fvcn=44 VLCN=0x6713723 PLCN=0x337b723 clusters=7 disk=0x337c723000
             (extents in remote OID 0x723)
   EXTENT    test/xbpt_beta_sierra_570651.json
             record=embedded, size=71395, attrs=Archive, extents=2, clusters=18
@@ -119,7 +119,7 @@ File Data Locations
             record=embedded, size=103809024, attrs=Archive, extents=2, clusters=25344
             created=2026-05-16 16:52:03
             run: fvcn=0 VLCN=0x671b7d7 PLCN=0x337f7d7 clusters=1 disk=0x33807d7000
-            run: fvcn=1 VLCN=0x1 PLCN=0x1 clusters=25343 disk=0x1001000
+            hole: fvcn=1 clusters=25343 (no allocation — reads as zeros; sparse flag 0x20)
   INLINE    test/xbpt_marked_eveliselaurence_670394.txt
             size=173 (bytes stored in the record; record is embedded) — no clusters
   INLINE    test/xbpt_symlink_hotel_632659.lnk
@@ -166,8 +166,8 @@ File Data Locations
   EXTENT    test/elvis_dir_index_149423/xbpt_beta_archive_985685.tmp
             record=split, size=310564, attrs=Archive, extents=2, clusters=76
             created=2023-11-27 07:16:30
-            run: fvcn=1 VLCN=0x6712a86 PLCN=0x337aa86 clusters=75 disk=0x337ba86000
             run: fvcn=0 VLCN=0x67180c5 PLCN=0x337c0c5 clusters=1 disk=0x337d0c5000
+            run: fvcn=1 VLCN=0x6712a86 PLCN=0x337aa86 clusters=75 disk=0x337ba86000
             (extents in remote OID 0x704)
   EXTENT    test/elvis_dir_index_149423/xbpt_draft_record_749595.cfg
             record=split, size=239973, attrs=Archive, extents=2, clusters=59
@@ -184,8 +184,8 @@ File Data Locations
   EXTENT    test/elvis_dir_index_149423/xbpt_zulu_kilo_319858.csv
             record=split, size=457030, attrs=Archive, extents=2, clusters=112
             created=2022-05-20 07:16:16
-            run: fvcn=1 VLCN=0x671184c PLCN=0x337984c clusters=111 disk=0x337a84c000
             run: fvcn=0 VLCN=0x67124b6 PLCN=0x337a4b6 clusters=1 disk=0x337b4b6000
+            run: fvcn=1 VLCN=0x671184c PLCN=0x337984c clusters=111 disk=0x337a84c000
             (extents in remote OID 0x711)
   EXTENT    test/elvis_dir_index_149423/xbpt_config_sync_830891.tmp
             record=embedded, size=407328, attrs=Archive, extents=2, clusters=100
@@ -233,8 +233,8 @@ File Data Locations
             created=2024-11-23 07:17:31
             run: fvcn=0 VLCN=0x67180c0 PLCN=0x337c0c0 clusters=1 disk=0x337d0c0000
             run: fvcn=1 VLCN=0x67129d5 PLCN=0x337a9d5 clusters=75 disk=0x337b9d5000
-            run: fvcn=77 VLCN=0x6712ad1 PLCN=0x337aad1 clusters=6 disk=0x337bad1000
             run: fvcn=76 VLCN=0x6712a20 PLCN=0x337aa20 clusters=1 disk=0x337ba20000
+            run: fvcn=77 VLCN=0x6712ad1 PLCN=0x337aad1 clusters=6 disk=0x337bad1000
             (extents in remote OID 0x718)
   EXTENT    test/elvis_dir_index_149423/elvis_dir_victor_121923/xbpt_hotel_mike_996142.cfg
             record=embedded, size=36549, attrs=Archive, extents=2, clusters=9
@@ -305,8 +305,8 @@ File Data Locations
   EXTENT    test/elvis_dir_index_149423/elvis_dir_victor_121923/elvis_dir_hotel_670324/elvis_dir_output_358165/xbpt_output_lima_215617.json
             record=split, size=403765, attrs=Archive, extents=2, clusters=99
             created=2026-05-16 16:51:52
-            run: fvcn=1 VLCN=0x6710fb8 PLCN=0x3378fb8 clusters=98 disk=0x3379fb8000
             run: fvcn=0 VLCN=0x67120bb PLCN=0x337a0bb clusters=1 disk=0x337b0bb000
+            run: fvcn=1 VLCN=0x6710fb8 PLCN=0x3378fb8 clusters=98 disk=0x3379fb8000
             (extents in remote OID 0x707)
   EXTENT    test/elvis_dir_index_149423/elvis_dir_victor_121923/elvis_dir_hotel_670324/elvis_dir_output_358165/xbpt_log_foxtrot_796125.ini
             record=embedded, size=264326, attrs=Archive, extents=2, clusters=65
@@ -343,8 +343,8 @@ File Data Locations
   EXTENT    test/elvis_dir_india_800575/xbpt_foxtrot_zulu_156856.csv
             record=split, size=130777, attrs=Archive, extents=2, clusters=32
             created=2026-05-16 16:51:57
-            run: fvcn=1 VLCN=0x67130f7 PLCN=0x337b0f7 clusters=31 disk=0x337c0f7000
             run: fvcn=0 VLCN=0x67180d0 PLCN=0x337c0d0 clusters=1 disk=0x337d0d0000
+            run: fvcn=1 VLCN=0x67130f7 PLCN=0x337b0f7 clusters=31 disk=0x337c0f7000
             (extents in remote OID 0x70f)
   EXTENT    test/elvis_dir_india_800575/xbpt_uniform_lima_155750.md
             record=split, size=145250, attrs=Archive, extents=2, clusters=36
@@ -480,8 +480,8 @@ File Data Locations
             run: fvcn=12 VLCN=0x6710bba PLCN=0x3378bba clusters=14 disk=0x3379bba000
             run: fvcn=26 VLCN=0x67124b7 PLCN=0x337a4b7 clusters=1 disk=0x337b4b7000
             run: fvcn=27 VLCN=0x67112ce PLCN=0x33792ce clusters=2 disk=0x337a2ce000
-            run: fvcn=30 VLCN=0x6711c8c PLCN=0x3379c8c clusters=5 disk=0x337ac8c000
             run: fvcn=29 VLCN=0x67112d0 PLCN=0x33792d0 clusters=1 disk=0x337a2d0000
+            run: fvcn=30 VLCN=0x6711c8c PLCN=0x3379c8c clusters=5 disk=0x337ac8c000
             (extents in remote OID 0x702)
   EXTENT    test/elvis_dir_papa_805353/elvis_dir_november_478580/xbpt_hardlink_echo_387599.ini
             record=split, size=237968, attrs=Archive, extents=2, clusters=59
@@ -498,8 +498,8 @@ File Data Locations
   EXTENT    test/elvis_dir_papa_805353/elvis_dir_november_478580/xbpt_index_index_579494.cfg
             record=split, size=113106, attrs=Archive, extents=2, clusters=28
             created=2026-05-16 16:52:00
-            run: fvcn=1 VLCN=0x6718a0b PLCN=0x337ca0b clusters=27 disk=0x337da0b000
             run: fvcn=0 VLCN=0x671b7a5 PLCN=0x337f7a5 clusters=1 disk=0x33807a5000
+            run: fvcn=1 VLCN=0x6718a0b PLCN=0x337ca0b clusters=27 disk=0x337da0b000
             (extents in remote OID 0x72f)
   EXTENT    test/elvis_dir_papa_805353/elvis_dir_november_478580/xbpt_log_output_579275.dat
             record=split, size=123468, attrs=Archive, extents=2, clusters=31
@@ -518,8 +518,8 @@ File Data Locations
             created=2025-04-02 07:16:24
             run: fvcn=0 VLCN=0x67132e4 PLCN=0x337b2e4 clusters=1 disk=0x337c2e4000
             run: fvcn=1 VLCN=0x6711f93 PLCN=0x3379f93 clusters=123 disk=0x337af93000
-            run: fvcn=125 VLCN=0x6712897 PLCN=0x337a897 clusters=9 disk=0x337b897000
             run: fvcn=124 VLCN=0x671200e PLCN=0x337a00e clusters=1 disk=0x337b00e000
+            run: fvcn=125 VLCN=0x6712897 PLCN=0x337a897 clusters=9 disk=0x337b897000
             (extents in remote OID 0x715)
   EXTENT    test/elvis_dir_papa_805353/elvis_dir_november_478580/xbpt_tango_echo_291736.csv
             record=split, size=219586, attrs=Archive, extents=6, clusters=54
@@ -528,14 +528,14 @@ File Data Locations
             run: fvcn=1 VLCN=0x6711461 PLCN=0x3379461 clusters=29 disk=0x337a461000
             run: fvcn=30 VLCN=0x671147e PLCN=0x337947e clusters=1 disk=0x337a47e000
             run: fvcn=31 VLCN=0x6711901 PLCN=0x3379901 clusters=13 disk=0x337a901000
-            run: fvcn=45 VLCN=0x6718d8b PLCN=0x337cd8b clusters=9 disk=0x337dd8b000
             run: fvcn=44 VLCN=0x671b7ad PLCN=0x337f7ad clusters=1 disk=0x33807ad000
+            run: fvcn=45 VLCN=0x6718d8b PLCN=0x337cd8b clusters=9 disk=0x337dd8b000
             (extents in remote OID 0x711)
   EXTENT    test/elvis_dir_papa_805353/elvis_dir_november_478580/xbpt_victor_tango_152379.bin
             record=split, size=505381, attrs=Archive, extents=2, clusters=124
             created=2026-05-16 16:51:56
-            run: fvcn=1 VLCN=0x6712c32 PLCN=0x337ac32 clusters=123 disk=0x337bc32000
             run: fvcn=0 VLCN=0x6713b00 PLCN=0x337bb00 clusters=1 disk=0x337cb00000
+            run: fvcn=1 VLCN=0x6712c32 PLCN=0x337ac32 clusters=123 disk=0x337bc32000
             (extents in remote OID 0x718)
   EXTENT    test/elvis_dir_papa_805353/elvis_dir_november_478580/xbpt_alpha_cache_742120.dat
             record=embedded, size=401806, attrs=Archive, extents=2, clusters=99
@@ -632,8 +632,8 @@ File Data Locations
             created=2026-05-16 16:51:54
             run: fvcn=0 VLCN=0x67132d9 PLCN=0x337b2d9 clusters=1 disk=0x337c2d9000
             run: fvcn=1 VLCN=0x6712032 PLCN=0x337a032 clusters=18 disk=0x337b032000
-            run: fvcn=20 VLCN=0x67138bc PLCN=0x337b8bc clusters=5 disk=0x337c8bc000
             run: fvcn=19 VLCN=0x6712044 PLCN=0x337a044 clusters=1 disk=0x337b044000
+            run: fvcn=20 VLCN=0x67138bc PLCN=0x337b8bc clusters=5 disk=0x337c8bc000
             (extents in remote OID 0x702)
   EXTENT    test/elvis_dir_papa_805353/elvis_dir_november_478580/elvis_dir_kilo_751807/xbpt_temp_backup_816270.cfg
             record=embedded, size=185084, attrs=Archive, extents=2, clusters=46
@@ -789,8 +789,8 @@ File Data Locations
             created=2026-05-16 16:51:51
             run: fvcn=0 VLCN=0x67126f2 PLCN=0x337a6f2 clusters=1 disk=0x337b6f2000
             run: fvcn=1 VLCN=0x671065a PLCN=0x337865a clusters=42 disk=0x337965a000
-            run: fvcn=44 VLCN=0x6710e7a PLCN=0x3378e7a clusters=14 disk=0x3379e7a000
             run: fvcn=43 VLCN=0x6710684 PLCN=0x3378684 clusters=1 disk=0x3379684000
+            run: fvcn=44 VLCN=0x6710e7a PLCN=0x3378e7a clusters=14 disk=0x3379e7a000
             (extents in remote OID 0x703)
   EXTENT    test/elvis_dir_record_449015/elvis_dir_lima_252141/elvis_dir_oscar_306778/xbpt_romeo_output_531365.cfg
             record=split, size=97673, attrs=Archive, extents=2, clusters=24
@@ -835,7 +835,7 @@ File Data Locations
             record=embedded, size=90177536, attrs=Archive, extents=2, clusters=22016
             created=2026-05-16 16:52:03
             run: fvcn=0 VLCN=0x671b7d3 PLCN=0x337f7d3 clusters=1 disk=0x33807d3000
-            run: fvcn=1 VLCN=0x1 PLCN=0x1 clusters=22015 disk=0x1001000
+            hole: fvcn=1 clusters=22015 (no allocation — reads as zeros; sparse flag 0x20)
   EXTENT    test/elvis_dir_record_449015/elvis_dir_lima_252141/elvis_dir_oscar_306778/xbpt_log_romeo_319918.txt
             record=embedded, size=8137, attrs=Archive, extents=2, clusters=2
             created=2026-05-16 16:51:59
@@ -1011,16 +1011,16 @@ File Data Locations
             created=2026-05-16 16:51:51
             run: fvcn=0 VLCN=0x67126f3 PLCN=0x337a6f3 clusters=1 disk=0x337b6f3000
             run: fvcn=1 VLCN=0x67105ff PLCN=0x33785ff clusters=90 disk=0x33795ff000
-            run: fvcn=92 VLCN=0x6711647 PLCN=0x3379647 clusters=15 disk=0x337a647000
             run: fvcn=91 VLCN=0x6710659 PLCN=0x3378659 clusters=1 disk=0x3379659000
+            run: fvcn=92 VLCN=0x6711647 PLCN=0x3379647 clusters=15 disk=0x337a647000
             (extents in remote OID 0x704)
   EXTENT    test/elvis_dir_record_449015/elvis_dir_papa_104235/elvis_dir_sync_718743/xbpt_record_delta_426347.json
             record=split, size=364340, attrs=Archive, extents=4, clusters=89
             created=2026-05-16 16:51:57
             run: fvcn=0 VLCN=0x67180d9 PLCN=0x337c0d9 clusters=1 disk=0x337d0d9000
             run: fvcn=1 VLCN=0x67180da PLCN=0x337c0da clusters=82 disk=0x337d0da000
-            run: fvcn=84 VLCN=0x6718eb6 PLCN=0x337ceb6 clusters=5 disk=0x337deb6000
             run: fvcn=83 VLCN=0x671812c PLCN=0x337c12c clusters=1 disk=0x337d12c000
+            run: fvcn=84 VLCN=0x6718eb6 PLCN=0x337ceb6 clusters=5 disk=0x337deb6000
             (extents in remote OID 0x70f)
   EXTENT    test/elvis_dir_record_449015/elvis_dir_papa_104235/elvis_dir_sync_718743/xbpt_record_index_307951.json
             record=split, size=415474, attrs=Archive, extents=2, clusters=102
@@ -1292,8 +1292,8 @@ File Data Locations
             created=2021-09-29 07:16:41
             run: fvcn=0 VLCN=0x67126f6 PLCN=0x337a6f6 clusters=1 disk=0x337b6f6000
             run: fvcn=1 VLCN=0x67109f1 PLCN=0x33789f1 clusters=42 disk=0x33799f1000
-            run: fvcn=44 VLCN=0x67184c9 PLCN=0x337c4c9 clusters=15 disk=0x337d4c9000
             run: fvcn=43 VLCN=0x6710a1b PLCN=0x3378a1b clusters=1 disk=0x3379a1b000
+            run: fvcn=44 VLCN=0x67184c9 PLCN=0x337c4c9 clusters=15 disk=0x337d4c9000
             (extents in remote OID 0x702)
   EXTENT    test/elvis_dir_record_449015/elvis_dir_papa_104235/elvis_dir_sync_718743/elvis_dir_gamma_109016/elvis_dir_zulu_984398/elvis_dir_cache_558805/xbpt_alpha_delta_830163.ini
             record=embedded, size=330404, attrs=Archive, extents=2, clusters=81
@@ -1350,8 +1350,8 @@ File Data Locations
   EXTENT    test/elvis_dir_record_449015/elvis_dir_papa_104235/elvis_dir_whiskey_835215/xbpt_alpha_romeo_974930.bin
             record=split, size=478670, attrs=Archive, extents=2, clusters=117
             created=2026-05-16 16:51:58
-            run: fvcn=1 VLCN=0x671365c PLCN=0x337b65c clusters=116 disk=0x337c65c000
             run: fvcn=0 VLCN=0x6718ec1 PLCN=0x337cec1 clusters=1 disk=0x337dec1000
+            run: fvcn=1 VLCN=0x671365c PLCN=0x337b65c clusters=116 disk=0x337c65c000
             (extents in remote OID 0x706)
   EXTENT    test/elvis_dir_record_449015/elvis_dir_tango_434284/xbpt_data_config_437965.csv
             record=embedded, size=82819, attrs=Archive, extents=2, clusters=21
@@ -1363,14 +1363,14 @@ File Data Locations
             created=2025-05-12 07:17:04
             run: fvcn=0 VLCN=0x671222e PLCN=0x337a22e clusters=1 disk=0x337b22e000
             run: fvcn=1 VLCN=0x671222f PLCN=0x337a22f clusters=121 disk=0x337b22f000
-            run: fvcn=123 VLCN=0x6719ac7 PLCN=0x337dac7 clusters=10 disk=0x337eac7000
             run: fvcn=122 VLCN=0x67122a8 PLCN=0x337a2a8 clusters=1 disk=0x337b2a8000
+            run: fvcn=123 VLCN=0x6719ac7 PLCN=0x337dac7 clusters=10 disk=0x337eac7000
             (extents in remote OID 0x708)
   EXTENT    test/elvis_dir_victor_783323/xbpt_trace_cache_289808.json
             record=split, size=40965, attrs=Archive, extents=2, clusters=11
             created=2026-05-16 16:51:59
-            run: fvcn=1 VLCN=0x6718280 PLCN=0x337c280 clusters=10 disk=0x337d280000
             run: fvcn=0 VLCN=0x671b791 PLCN=0x337f791 clusters=1 disk=0x3380791000
+            run: fvcn=1 VLCN=0x6718280 PLCN=0x337c280 clusters=10 disk=0x337d280000
             (extents in remote OID 0x72b)
   EXTENT    test/elvis_dir_victor_783323/xbpt_audit_november_550810.ini
             record=embedded, size=417862, attrs=Archive, extents=4, clusters=103
@@ -1418,7 +1418,7 @@ File Data Locations
             record=embedded, size=156237824, attrs=Archive, extents=2, clusters=38144
             created=2026-05-16 16:52:03
             run: fvcn=0 VLCN=0x671b7d6 PLCN=0x337f7d6 clusters=1 disk=0x33807d6000
-            run: fvcn=1 VLCN=0x1 PLCN=0x1 clusters=38143 disk=0x1001000
+            hole: fvcn=1 clusters=38143 (no allocation — reads as zeros; sparse flag 0x20)
   EXTENT    test/elvis_dir_victor_783323/xbpt_november_quebec_999278.md
             record=embedded, size=495412, attrs=Archive, extents=2, clusters=121
             created=2026-05-16 16:52:02

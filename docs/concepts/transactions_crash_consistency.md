@@ -37,8 +37,10 @@ Three parts cooperate to make this work:
 ### The four-layer MLog and the commit point
 
 Each MLog data page is one LogCore record. Past the LogCore record header (Layer 1, 0x78 bytes) and the
-entry header (Layer 2), the payload is a single **redo block** (`_SmsRedoHeader`, Layer 3) whose inner
-**`_SmsRedoRecord`** entries (Layer 4, ≥ 0x38 bytes each) are the actual operations. The full byte
+entry header (Layer 2), the payload holds a **chain of merged redo blocks** (`_SmsRedoHeader`, Layer 3) —
+up to 15 of them, walked by `CmsRestarter::ForEachBlockInMergedBlock` — whose inner **`_SmsRedoRecord`**
+entries (Layer 4, ≥ 0x38 bytes each) are the actual operations. Reading only the first block of a payload
+loses most of the log: the chain, not the single block, is the unit to walk. The full byte
 layout is on the [MLog](../structures/mlog.md) page; the offsets that carry an analyst through a record
 are:
 
@@ -80,10 +82,13 @@ documents why the self-checksum width tracks the cluster size.
 
 ## Forensic implications
 
-- **A crashed volume and a clean volume look different on disk, and the difference is your leverage.**
-  After a clean unmount, *both* CHKP copies point at the **same** root tables, so a single-image
-  checkpoint comparison yields nothing. On a **dirty/crashed** volume the two checkpoints diverge: the
-  lower-clock slot still references the *previous* root tables. This is exactly why
+- **The two checkpoint copies do NOT tell a crashed volume from a clean one.** Measured across 18
+  volumes including the corpus's unclean-detach image (`lab314_main_step3_dirty`): the clock gap between
+  the two slots is **1 on 18 of 18**, and the two copies' 13 root pointers are **identical element for
+  element on 18 of 18** — the dirty volume is bit-for-bit indistinguishable from the 17 clean ones on
+  both counts. (`+0x10` equals `+0x60` on every copy, so the page-header clock separates nothing either.)
+  Checkpoint-differential recovery still works where the copies *do* differ, but their agreement is not
+  evidence of a clean dismount. This is why
   **checkpoint-differential recovery only works on dirty volumes** — it compares Object Table entries
   between the current and previous checkpoint, and objects present in the old but absent from the current
   were deleted in that window. On a cleanly unmounted image you must instead fall back to orphan-page
@@ -106,10 +111,19 @@ documents why the self-checksum width tracks the cluster size.
   uncommitted-transaction window is visible only on an image captured from a volume that crashed and was
   **never re-mounted**. Image dirty volumes read-only and before any mount.
 
-- **The checkpoint clock is an activity and tamper signal.** The virtual clock at CHKP+0x60 increments
-  once per flush, and the lower-clock slot is the immediately-prior consistent state. A large clock gap
-  between the two slots — or against an expected baseline — indicates the volume was dirty when imaged,
-  and is a quick triage flag for whether checkpoint-differential recovery is even available.
+- **The checkpoint clock is an activity and tamper signal, but not a dirty-volume signal.** The virtual
+  clock at CHKP+0x60 increments once per flush and the lower-clock slot is the immediately-prior
+  consistent state, so a divergence between the clock and the page-header clock at `+0x10` is a tamper
+  indication. A **clock gap does not indicate a dirty volume**: the gap is 1 on every corpus volume
+  measured, clean and unclean alike.
+
+  What does carry the signal is the **log position**: on a clean dismount the checkpoint is written last,
+  so the highest per-object log position equals the checkpoint's own at `+0x70`; a volume torn away
+  mid-work carries objects past it. `forefst summary` reports this and exits 2. Its measured scope is
+  narrow and worth stating: over 121 corpus images **exactly one** (`labFbeforereboot`) is ahead — and
+  `lab314_main_step3_dirty` is **not** flagged by it either. So ReFS does not reliably mark a dirty
+  volume anywhere in the checkpoint: a negative result means "no evidence of an unclean dismount", never
+  "this volume was cleanly dismounted".
 
 ## Version and state differences
 

@@ -58,12 +58,18 @@ from forefst import (
     validate_image as _validate_image, walk_bplus, walk_directory_tree,
     _current_stream_extent_backed, _multilevel_extent_backed_size,
     _attrs_to_str, _find_snapshot_files, _guid_str, _hx, _parse_extended_attributes, _vbr_checksum,   # 5.1: single-source helpers
+    _vbr_bytes_per_sector,   # K063 / audit B5: IMPORTED, not re-implemented -- this tool multiplied
+                             # total_sectors by a hard-coded 512, so a 4Kn volume read 504.0 MB
+                             # instead of 3.9 GiB. A4 fixed forefst.py and left this one; a second
+                             # copy of the rule is how that happened, so there is only one.
+    _verify_self_checksum,   # A1/K035: `chkp --verify` must verify the page's OWN checksum
+    _page_bytes,         # N52: one definition of a metadata page's byte size, shared with forefst.py
     _skip_note,          # A2: a summary count that silently defaults to 0 reads as "none present"
     alloc_capacity, alloc_decode_row, alloc_read_summary, alloc_row_counts, _ALLOC_TIERS,
 )
 
 PROG = "refsanalysis"
-VERSION = "1.12.3"
+VERSION = "1.13.0"
 
 
 
@@ -124,8 +130,8 @@ SUBCOMMANDS = [
     ("bootedit",    "[DANGEROUS] Boot sector editor and repair",
      ["read: display boot sector (read-only)",
       "export -o FILE: export VBR to binary file",
-      "repair [--dry-run]: restore a corrupt VBR/SUPB copy from a good redundant sibling (self-checksum);",
-      "        also diagnoses/fixes fixboot damage. Default writes a repaired sparse copy; --inplace edits the original.",
+      "repair [--dry-run]: diagnose fixboot damage in the PRIMARY boot sector and propose/apply fixes.",
+      "        Default writes a repaired sparse copy; --inplace edits the original.",
       "set --field FIELD --value VALUE [--dry-run]: modify VBR field",
       "import -i FILE [--dry-run]: replace boot sector from a 512-byte file",
       "sparse -o FILE: create sparse image copy",
@@ -459,7 +465,7 @@ def cmd_summary(image, remaining, partition_start, plus_mode=False):
                 _skip_note("summary: compression format", "container table page", _e)
 
         checksum_types = {0: "None", 2: "CRC64", 4: "SHA-256"}
-        volume_bytes = total_sectors * 512
+        volume_bytes = total_sectors * _vbr_bytes_per_sector(_read_at(f, ps, 512))   # K063
 
         hs = _summary_human_size
         summary = {
@@ -1668,6 +1674,9 @@ def cmd_oid30(image, remaining, partition_start):
 
 def cmd_chkp(image, remaining, partition_start):
     args = _parse_args(remaining, flags=["-v", "-vv", "--verify", "--raw"])
+    # A1/K035: a --verify run that found a corrupt checkpoint must say so in its EXIT CODE too, so a
+    # script branching on the status can see it. Populated by the self-checksum check below.
+    _chkp_failed = []
     verbose = 2 if args["vv"] else (1 if args["v"] else 0)
     verify = args["verify"]
 
@@ -1684,7 +1693,7 @@ def cmd_chkp(image, remaining, partition_start):
         for lcn in chkp_lcns:
             off = ps + lcn * cs
             try:
-                raw = _read_at(f, off, 4 * cs)
+                raw = _read_at(f, off, _page_bytes(cs))   # N52: one PAGE (16 KiB on 4K, 64 KiB on 64K)
                 if raw[:4] != b"CHKP": continue
                 vc = le64(raw, 0x10)
                 if vc > best_vc:
@@ -1771,6 +1780,34 @@ def cmd_chkp(image, remaining, partition_start):
         print("Verification")
         print("=" * 78)
         ok = 0; total = 0
+        # A1/K035: `--verify` ran 17 structural checks and reported "17/17 checks passed" on a checkpoint
+        # whose page had been corrupted -- it never verified the CHKP page's OWN self-checksum, which is
+        # the one check that would have caught it. A checkpoint that fails its checksum is not a healthy
+        # checkpoint no matter how well its root list parses.
+        # K042: both clocks were PRINTED one line apart and neither was ever compared -- a copy whose
+        # allocator clock was 617 ahead of its virtual clock still reported "17/17 checks passed". The
+        # allocator state cannot be newer than the checkpoint that describes it. Measured over 117 images
+        # / 234 copies before the rule was written: `virtual - allocator` is always 3..31, never <= 0.
+        total += 1
+        _vc_sel = le64(raw, 0x60)
+        _ac = le64(raw, 0x68)
+        if _ac <= _vc_sel:
+            print(f"  [OK] Allocator clock {_ac} <= virtual clock {_vc_sel}"); ok += 1
+        else:
+            print(f"  [FAIL] Allocator clock {_ac} is AHEAD of the virtual clock {_vc_sel} — the "
+                  f"allocator state cannot be newer than the checkpoint describing it; one of the two "
+                  f"was edited")
+            _chkp_failed.append(best_off)
+        total += 1
+        _ck_ok, _ck_name = _verify_self_checksum(raw, cs)
+        if _ck_ok is True:
+            print(f"  [OK] CHKP self-checksum ({_ck_name})"); ok += 1
+        elif _ck_ok is False:
+            print(f"  [FAIL] CHKP self-checksum ({_ck_name}) does NOT match the page contents — "
+                  f"this checkpoint is corrupt or was tampered with")
+            _chkp_failed.append(best_off)
+        else:
+            print("  [SKIP] CHKP self-checksum — no algorithm available for this volume"); ok += 1
         total += 1
         if root_count == 13:
             print("  [OK] Root count = 13"); ok += 1
@@ -1797,7 +1834,11 @@ def cmd_chkp(image, remaining, partition_start):
             print(f"  [OK] CPC from Container Table (0x{cpc_ct:x}) matches VBR (0x{cpc_vbr:x})"); ok += 1
         else:
             print(f"  [WARN] CPC mismatch: Container Table=0x{cpc_ct:x}, VBR=0x{cpc_vbr:x}")
-        print(f"\n  Result: {ok}/{total} checks passed")
+        if ok == total:
+            print(f"\n  Result: {ok}/{total} checks passed")
+        else:
+            # "N/M checks passed" reads as a pass summary even when M-N of them failed; say what failed.
+            print(f"\n  Result: {total - ok} check(s) FAILED ({ok}/{total} passed)")
 
     if args["raw"]:
         print()
@@ -1810,7 +1851,7 @@ def cmd_chkp(image, remaining, partition_start):
             a = "".join(chr(x) if 32 <= x < 127 else "." for x in chunk)
             print(f"  {row_off:04x}  {h:<48s}  |{a}|")
         print()
-        return 0
+        return 2 if _chkp_failed else 0
 
     if verbose == 0:
         self_block = le64(raw, 0x20)
@@ -1867,7 +1908,7 @@ def cmd_chkp(image, remaining, partition_start):
                              _sig_str(sig) if sig else "n/a", note))
         print()
         if verify: _emit_verify()
-        return 0
+        return 2 if _chkp_failed else 0
 
     # -v / -vv verbose
     print()
@@ -1967,7 +2008,7 @@ def cmd_chkp(image, remaining, partition_start):
     if verify:
         _emit_verify()
 
-    return 0
+    return 2 if _chkp_failed else 0
 
 
 # ═══════════════════════════════════════════════════════════════════════
@@ -2379,8 +2420,9 @@ def cmd_containers(image, remaining, partition_start):
 
         ct_map = {k: row[0] for k, row in ct_full.items()}
         tr = Translator(ct_map, cpc)
-        total_sectors = le64(_read_at(f, ps, 512), 0x18)
-        volume_bytes = total_sectors * 512
+        _vbr0 = _read_at(f, ps, 512)
+        total_sectors = le64(_vbr0, 0x18)
+        volume_bytes = total_sectors * _vbr_bytes_per_sector(_vbr0)                  # K063
 
         alloc_root_map = {1: "Medium Allocator", 2: "Container Allocator", 12: "Small Allocator"}
         allocator_info = {}
@@ -3572,7 +3614,16 @@ def _diagnose_fixboot(sector):
         issues.append(("volume_serial is zero", 0x38, 8, sector[0x38:0x40],
             "refsutil fixboot zeroes the serial. Volume may not be recognized."))
     guid = sector[0x48:0x58]
+    major_v = sector[0x28]
     minor_v = sector[0x29]
+    # B8/K050: an implausible version is itself damage, AND it corrupts every check below it. The field
+    # is read one byte at a time, so a hand-edited 0x6666 reads as minor 0x66 = 102, every `minor_v >= 14`
+    # branch is taken, and an edited volume_flags then passes as a valid 3.14 value. ReFS formats seen in
+    # the corpus are 3.4 / 3.7 / 3.9 / 3.10 / 3.14 / 3.15; major is always 3.
+    if major_v != 3 or minor_v > 20:
+        issues.append((f"implausible version {major_v}.{minor_v}", 0x28, 2, sector[0x28:0x2A],
+            "ReFS volumes are 3.x (corpus: 3.4/3.7/3.9/3.10/3.14/3.15). A version outside that range is "
+            "damage or a hand edit, and it also makes every version-gated check below unreliable."))
     if guid == b"\x00" * 16 and minor_v >= 14:
         issues.append(("format_guid is zero on a 3.14 volume", 0x48, 16, guid,
             "Expected non-zero on native Win11 format. May indicate fixboot damage or upgraded volume."))
@@ -3742,7 +3793,16 @@ def _bootedit_main(image, remaining, partition_start):
 
             issues = _diagnose_fixboot(sector)
             if not issues:
-                print("No fixboot damage detected. Boot sector appears healthy.")
+                # B8/K050: this used to read "Boot sector appears healthy" -- a whole-volume claim from
+                # six fields of ONE sector. The backup VBR, the superblock copies and the checkpoints are
+                # not read here at all, so a volume damaged anywhere else was pronounced healthy.
+                print("No fixboot damage detected in the checks this command performs.")
+                print("  Checked: the PRIMARY boot sector only -- container size, volume serial, format")
+                print("           GUID, checksum algorithm, volume flags, version plausibility and the")
+                print("           VBR checksum.")
+                print("  NOT checked: the backup boot sector, the superblock copies, the checkpoints, or")
+                print("           any metadata beyond this sector. This is NOT a clean bill of health for")
+                print("           the volume -- run `forefst.py <image> integrity` for that.")
                 return 0
 
             print(f"Found {len(issues)} issue(s):")
@@ -4067,9 +4127,8 @@ CMD_HELP = {
    "opts": [("-v", "detailed per-row dump")],
    "ex": [("oid30", "session-activity summary"), ("oid30 -v", "+ per-row decoded fields")]},
  "bootedit": {"tag": "[DANGEROUS] Boot sector editor & repair",
-   "desc": ["Inspect or repair the ReFS VBR + bootstrap copies. ACTIONS: read (display), export -o FILE, repair",
-            "(restore a corrupt VBR/SUPB copy from a good redundant sibling via its self-checksum, and fix",
-            "refsutil fixboot damage), set --field F --value V, import -i FILE, sparse -o FILE (sparse image copy).",
+   "desc": ["Inspect or repair the ReFS VBR. ACTIONS: read (display), export -o FILE, repair (diagnose and",
+            "set --field F --value V, import -i FILE, sparse -o FILE (sparse image copy).",
             "Writes go to a repaired SPARSE COPY unless --inplace is given; ALWAYS preview with --dry-run."],
    "opts": [("read | export | repair | set | import | sparse", "the action (positional)"),
             ("--field F / --value V", "set: which VBR field and its new value"),

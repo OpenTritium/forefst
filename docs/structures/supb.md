@@ -25,7 +25,7 @@ There are three SUPB copies on every volume:
 - **Backup 1**: `VolSize − 2` (i.e. `total_clusters − 2`)
 - **Backup 2**: `VolSize − 3` (i.e. `total_clusters − 3`)
 
-The backup locations are computed from the volume size by `CmsVolume::ReadSuperBlock`. The primary at LCN 0x1E is **not** privileged: the authoritative copy is whichever passes self-checksum validation and has the highest virtual clock (+0x68), so a corrupt primary silently falls back to a backup.
+The backup locations are computed from the volume size by `CmsVolume::ReadSuperBlock`. The primary at LCN 0x1E is **not** privileged. Note what this does **not** give you: the virtual clock at SUPB+0x68 reads **1 on 351 of 351 copies across 117 images**, so a "highest virtual clock wins" rule discriminates between the copies on no volume in the corpus, and no tie-break is stated anywhere. In practice the authoritative copy is whichever passes its own self-checksum.
 
 ## Self-descriptor
 

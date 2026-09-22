@@ -96,10 +96,8 @@ CRC64 verification is active. The single most important fact for a verifier is t
 ECMA-182:
 
 - **Polynomial `0xAD93D23594C93659` (normal) / `0x9A6C9329AC4BC9B5` (reflected)** — the driver global
-  `ClMulCsCrc64`. The polynomial is not ECMA-182's `0x42F0E1EBA9EA3693` (`0x42F0E1EBA9EA3693`); recomputing with the
-
-It is a **named, standard CRC**, so it does not need a bespoke implementation: ReFS uses **CRC-64/NVME** (also catalogued as CRC-64/Rocksoft) — polynomial `0xAD93D23594C93659` (reflected `0x9A6C9329AC4BC9B5`), init and xorout `0xFFFFFFFFFFFFFFFF`, reflected in and out. The catalogue check value for that CRC is `0xAE8B14860A799888`, and the reader's own implementation returns exactly that for `"123456789"` — so any `crc64_nvme` / `crc64_rocksoft` library reproduces ReFS metadata checksums directly.
-  wrong polynomial fails on every page.
+  `ClMulCsCrc64`. The polynomial is not ECMA-182's `0x42F0E1EBA9EA3693` (reflected
+  `0xC96C5795D7870F42`); recomputing with the wrong polynomial fails on every page.
 - **Reflected**, init = xorout = `0xFFFFFFFFFFFFFFFF`.
 - Computed over the **full metadata page** (all of the page reference's LCN slots concatenated — 16 KiB
   on a 4 KiB-cluster volume), as one block.
@@ -107,6 +105,13 @@ It is a **named, standard CRC**, so it does not need a bespoke implementation: R
   faithful reimplementation must apply the same substitution or it will report a false mismatch on the
   one page that happens to hash to the sentinel.
 - Stored in the **parent's page reference** (`rec+0x28`), never in the page itself.
+
+It is a **named, standard CRC**, so it does not need a bespoke implementation: ReFS uses **CRC-64/NVME**
+(also catalogued as CRC-64/Rocksoft) — polynomial `0xAD93D23594C93659` (reflected
+`0x9A6C9329AC4BC9B5`), init and xorout `0xFFFFFFFFFFFFFFFF`, reflected in and out. The catalogue check
+value for that CRC is `0xAE8B14860A799888`, and this reader's own implementation returns exactly that for
+`"123456789"` — so any `crc64_nvme` / `crc64_rocksoft` library reproduces ReFS metadata checksums
+directly.
 
 The computation is the carry-less-multiply `Crc64_ClMul` instantiation of `GenerateChecksum`, and
 SHA-256 pages (`cktype = 4`) are plain `sha256(full_page)`. Recomputing CRC64 this way matches every

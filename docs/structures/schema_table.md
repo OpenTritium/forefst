@@ -2,12 +2,16 @@
 
 The Schema Table (roots #3/#9, schema 0xe060) is self-describing: it contains one entry per table type used by the volume. Each entry fixes the key-comparison rules that let the generic B+-tree engine order rows without knowing their meaning.
 
-## Key format — 8 bytes
+## Key format — 4 bytes
 
 | Offset | Size | Field | Description |
 |--------|------|-------|-------------|
-| 0x00 | 4 | Schema ID (u32) | Unique schema identifier |
-| 0x04 | 4 | Zero padding (u32) | Always 0 |
+| 0x00 | 4 | Schema ID (u32) | Unique schema identifier — the whole key |
+
+The row's own `key_len` field reads **4**, on every Schema-Table row measured: 598 rows over 10 volumes
+spanning formats 3.4, 3.7, 3.9, 3.10, 3.14 (4 KiB and 64 KiB clusters, SHA-256), an Insider build and an
+upgraded volume — key-length histogram `{4: 598}`, **0 rows with an 8-byte key**. A key reads as the bare
+schema id (`04000000`, `10010000`); there is no zero-padding word inside it.
 
 ## Value — schema definition (80 bytes, 20 × u32)
 
@@ -103,7 +107,8 @@ the NTFS `$SI`-vs-`$FILE_NAME` timestomp cross-check does **not** exist on ReFS 
 **hard-linked** file differs: each name is a separate type-0x30 row carrying its own MACB (value
 +0x10/+0x18/+0x20/+0x28), and those rows *can* diverge where NTFS's cannot — a ReFS-only,
 journal-independent lead (`FN_LINK_003`; forefst's `HARDLINK_MACB_MISMATCH` signal). Divergence is
-evidence; agreement is not, because one `SetFileTime` updates every name. *(The exact embedded-code
+evidence; agreement clears nothing, because the file's own record takes the new time for every name at
+once and each row is a cache refreshed when its name is opened. *(The exact embedded-code
 mapping of 0x130/0x140 — the +0x100 rule vs. the 0x38/0x39 retained-numbering exception — is discussed in
 the thesis $FILE_NAME section; it is not resolved here.)*
 

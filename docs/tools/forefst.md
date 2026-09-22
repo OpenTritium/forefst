@@ -214,7 +214,7 @@ forefst.py disk.raw timeline --source USN --oid 0x701  # one object's USN histor
 
 ### `timestomp` — timestamp-anomaly detection
 
-Flags timestamp tampering by comparing intrinsic $SI MACB against USN-journal evidence and volume create/modify bounds; tiers each suspect HIGH/MEDIUM/LOW. It also emits `HARDLINK_MACB_MISMATCH` — a ReFS-native, **journal-independent** signal: because `$SI` is stored per name, two hard-link names of one file can carry divergent Created values, which nothing routine produces. Which name holds the true birth is not established, and the signal's **absence means nothing** — a `SetFileTime` through one name updates every name at once.
+Flags timestamp tampering by comparing intrinsic $SI MACB against USN-journal evidence and volume create/modify bounds; tiers each suspect HIGH/MEDIUM/LOW. It also emits `HARDLINK_MACB_MISMATCH` — a ReFS-native, **journal-independent** signal: because `$SI` is stored per name, two hard-link names of one file can carry divergent Created values, which nothing routine produces. Which name holds the true birth is not established, and the signal's **absence means nothing** — the file's own record takes the new time for every name at once, and each name's row is a cache refreshed when that name is opened, so any read of a sibling erases the difference.
 
 | Option | Description |
 |--------|-------------|
@@ -234,7 +234,7 @@ files, because that is what installing an operating system looks like.
 
 | Signal | Meaning | Base rate | Weight |
 |---|---|---|---|
-| `HARDLINK_MACB_MISMATCH` | two names of one file disagree on Created — ReFS keeps `$SI` **per name** and the copies can diverge. Journal-independent. Absence means nothing: one `SetFileTime` updates every name | **0.06 %** | **HIGH** |
+| `HARDLINK_MACB_MISMATCH` | two names of one file disagree on Created — ReFS keeps `$SI` **per name** and the copies can diverge. Journal-independent. Absence means nothing: the file's own record updates for every name at once, and a read of a sibling refreshes its row | **0.06 %** | **HIGH** |
 | `USN_BASIC_INFO_CHANGE` | the change journal recorded a basic-information write on this file | — | **HIGH** |
 | `USN_CREATE_MISMATCH` | the journal's create record disagrees with `$SI` | — | **HIGH** |
 | `CHANGE_LATE` | change time post-dates create/modify | 21.83 % | MEDIUM **only without** `PRE_FORMAT` |
@@ -622,10 +622,10 @@ The `files` CSV has **40 columns**, one row per file/directory, in this order (m
 
 | # | Column | Description |
 |---|--------|-------------|
-| 1 | ObjectRef | the object's identity — a **directory** shows its own OID, a **file** its FileRef `HomeOID:FileID` (the USN `FileReferenceNumber`). Exactly one of the two applies, so they share one column |
+| 1 | ObjectRef | the object's identity — a **directory** shows `OID:0x0` — its own OID in the home slot with FileId 0, which is exactly how the change journal references a directory (verified on 589 directories, no counterexample) — and a **file** its FileRef `HomeOID:FileID` (the USN `FileReferenceNumber`). Exactly one of the two applies, so they share one column |
 | 2 | FullPath | full path from root (ParentPath + FileName) |
 | 3 | FileName | file or directory name |
-| 4 | Extension | file extension (lowercase) |
+| 4 | Extension | file extension, **in the case it has on disk** (`.SYS` stays `.SYS`) — a forensic listing reports the name as stored, not a normalised form. Blank when the suffix after the last dot is longer than 10 characters, which is treated as not an extension |
 | 5 | FileSize | logical file size in bytes |
 | 6 | Created | $SI creation timestamp |
 | 7 | Modified | $SI modification timestamp |
@@ -637,7 +637,7 @@ The `files` CSV has **40 columns**, one row per file/directory, in this order (m
 | 13 | HomeOID | OID of the directory the file was **created in** — frozen at creation, unchanged by move or rename (older spelling: `CreationDirOID`). Its resolved path is column 12, `CreationDir`. Differs from `ParentOID` (where the file is **now**) exactly when the file has been moved |
 | 14 | FileID | the per-directory child ordinal (low 64 bits) — monotonic, never re-used after deletion |
 | 15 | USN | Update Sequence Number (LastUsn) |
-| 16 | FileAttributes | decoded Windows file-attribute flags |
+| 16 | FileAttributes | the on-disk attribute word decoded with **ReFS** names, which is not the same as what Windows reports. Two differences are systematic: bit `0x10000000` prints as `Directory_Internal` where Windows reports `Directory` (0x10), and bit `0x40000` prints as `EA` where Windows reports nothing. Measured against the operator's PowerShell inventory on `lab314_main` (4,684 common paths): **490 rows differ on exactly those two bits** — 26 directories and 464 files — and 1 further row differs for another reason. The tool is reading the bytes correctly; it is naming them differently |
 | 17 | SecurityId | ReFS security-descriptor ID |
 | 18 | OwnerSid | owner: friendly name + SID (e.g. `BUILTIN\Administrators (S-1-5-32-544)`) |
 | 19 | GroupSid | group: friendly name + SID (from the security descriptor) |
@@ -645,7 +645,7 @@ The `files` CSV has **40 columns**, one row per file/directory, in this order (m
 | 21 | HasADS | alternate data stream present |
 | 22 | ADSNames | names of detected ADS |
 | 23 | RecordPlacement | `embedded` when the file's record sits inside its name row, `split` when it lives in its own type-0x40 backing record. **A move or a hard link forces the split** — and moves no data. Blank for directories |
-| 24 | DataResidency | where the current `$DATA` bytes actually are: `inline` (in the record), `extents` (on disk), `snapshot-shared` (the live stream owns no allocation; its bytes are the latest snapshot's, and `extract` still recovers them) or `unallocated` (owns no allocation and has no snapshot — nothing was ever written there). Blank for directories |
+| 24 | DataResidency | where the current `$DATA` bytes actually are: `inline` (in the record), `extents` (on disk), `snapshot-shared` (the live stream owns no allocation; its bytes are the latest snapshot's, and `extract` still recovers them) or `unallocated` (owns no allocation and has no snapshot — nothing was ever written there). A **0-byte** stream is classified by descriptor form like any other, so an extent-form one reads `extents`, not `unallocated`: "nothing was ever written" is not a distinguishable state for a stream with nothing to write. Blank for directories |
 | 25 | IsResident | **Deprecated alias**, kept for one release: `True` exactly when `DataResidency` is `inline`. Prefer `DataResidency`, which distinguishes the four cases this boolean collapses |
 | 26 | IsDirectory | `True` if the entry is a directory |
 | 27 | IsEncrypted | EFS encryption flag |
@@ -658,8 +658,8 @@ The `files` CSV has **40 columns**, one row per file/directory, in this order (m
 | 34 | SnapshotNames | `;`-joined snapshot version labels (e.g. `v3;v2;v1`) |
 | 35 | ReparseTag | `IO_REPARSE_TAG_* (0xTAG)` for reparse points |
 | 36 | ReparseTarget | symlink/junction target |
-| 37 | IsSparse | `FILE_ATTRIBUTE_SPARSE_FILE` (0x200) set — corroborated by AllocatedSize < FileSize. Distinct from `DataResidency = unallocated`, which is derived from the `$DATA` descriptor (extent form owning no allocation and no snapshot) rather than from the attribute bit. The two are independent readings and agree on the corpus |
-| 38 | AllocatedSize | on-disk allocated size (blank when unresolved) |
+| 37 | IsSparse | `FILE_ATTRIBUTE_SPARSE_FILE` (0x200) set. **`AllocatedSize < FileSize` does not corroborate it** — over 936,277 rows on 117 images, 137 are sparse and the inequality holds on only 58 of them: 22 have `AllocatedSize == FileSize` and 57 have `AllocatedSize > FileSize`, so it fails on **79 of 137 = 57.7 %**, the majority. Read the attribute bit; do not infer sparseness from the sizes. Distinct from `DataResidency = unallocated`, which is derived from the `$DATA` descriptor (extent form owning no allocation and no snapshot) rather than from the attribute bit. The two are independent readings and agree on the corpus |
+| 38 | AllocatedSize | on-disk allocated size. Blank when unresolved, and **blank for directories** — a directory's allocation is not a property this listing resolves (Windows reports 0) |
 | 39 | InternalFlags | `$SI` internal flags (e.g. `DeleteDisposition`); blank unless a confidently-named bit is set |
 | 40 | IsMoved | `True` when the file currently sits **outside its creation directory** (CreationDirOID ≠ ParentOID with a single name) — a genuine move, as distinct from a hard link into another directory. A moved file may still report `IsResident True`: the move relocates the *record*, not the *bytes* |
 
@@ -767,13 +767,18 @@ Python 3.7+ standard library only. No pip packages.
 |------|---------|
 | `0` | Success — the command ran and flagged nothing. |
 | `1` | Error — the input could not be read or parsed (not a ReFS/GPT image, file missing, corrupt bootstrap), or a **usage error**: an unrecognised flag, a missing option value, or a bad subcommand. Uniform across all 19 commands. |
-| `2` | A **finding of interest**, and nothing else: `integrity` found a checksum/structural failure, `security --audit` found descriptor tampering, or `extract` refused a file that is not in the image. |
+| `2` | Either **a finding of interest** or **work the command could not complete**. Findings: `integrity` found a checksum or structural failure, `security --audit` found descriptor tampering, a redundancy finding (missing backup boot sector, fewer than two intact superblock copies), an integrity-stream CRC-32C mismatch, a journal tail destroyed inside the written span, a volume that was not cleanly dismounted. Could-not-complete: any recorded skip, a page that could not be read as a B+ node, `integrity --max-pages` reaching its cap, `extract`/`export` refusing content that would have come from image holes, or hole coverage that could not be determined. |
 
-`rc == 2` therefore has exactly one meaning: **the command ran and found something you should look at.** A
-mistyped flag can never produce it, on any command, so `if rc == 2` is a safe branch in a script. Every command
-prints the offending flag to stderr when it rejects one.
+`rc == 2` means **the command ran and either found something or could not certify the volume clean.** A
+mistyped flag can never produce it, on any command, so `if rc == 2` is still a safe branch in a script — but
+it is no longer a synonym for "found a problem"; branch on the JSON (`integrity --json` carries `clean` and
+`coverage_complete`) when you need to separate the two. Every command prints the offending flag to stderr when
+it rejects one.
 
-These codes are **frozen for the 1.10 line** and locked by the test suite, which measures all 19 commands.
+**A file that is not in the image exits `1`, not `2`** — that is an input error, not a finding, on every
+command and in both default and `--refuse-holes` modes.
+
+The full list of conditions that moved from `0` to `2` in 1.13.0 is the migration table in the release notes.
 An audit proposed renumbering every usage error *to* `2`; that was rejected, because `2` is already the finding
 code and the change would have made a mistyped flag indistinguishable from a real integrity failure. The
 overload was removed the other way instead — usage errors moved to `1` everywhere — which is why `2` is now

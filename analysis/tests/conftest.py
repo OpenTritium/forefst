@@ -11,7 +11,7 @@ import sys
 import pytest
 
 # tests/ lives at analysis/tests/, so the repo root is THREE levels up (tests -> analysis -> repo).
-REPO = os.path.dirname(os.path.dirname(os.path.dirname(os.path.abspath(__file__))))
+from _repo import REPO                                   # layout-independent; see _repo.py
 sys.path.insert(0, REPO)
 
 SECTOR = 512

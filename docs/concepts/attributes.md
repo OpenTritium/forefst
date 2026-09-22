@@ -84,7 +84,15 @@ marker-gated scan of the raw-disk corpus.
 `$LOGGED_UTILITY_STREAM` (type 0xF0) is sometimes filed as an "unknown logged-utility stream." It is not.
 It is the **USN journal `$Max` metadata** — a single-instance sub-record on the Change Journal file under
 the system object OID 0x520, holding the journal's maximum size (the familiar `fsutil usn createjournal`
-sizes such as 128 MB or 32 MB). It is created by `RefsSetupUsnJournal` and has existed since v3.4, but it
+sizes such as 128 MB or 32 MB).
+
+Its layout is known and is worth stating here, because the pages that mention `$Max` never give a field
+offset. The sub-record content is 64 B or 72 B and opens with a 12-byte wrapper (`u32@+0x00` = 0,
+`u32@+0x04` = 0x20 payload length, `u32@+0x08` = 0x0C payload offset), followed by **four `u64`** at content
+`+0x0C`, `+0x14`, `+0x1C`, `+0x24`: **MaximumSize**, **AllocationDelta**, **UsnJournalID**, **LowestValidUsn**.
+Measured on 5 journal volumes: MaximumSize equals the `$J` allocated size on 5/5 (0x2000000, 0x4000000 or
+0x8000000), AllocationDelta is 0 on 5/5, LowestValidUsn is 0 on 5/5, and the UsnJournalID is byte-identical
+to the value `fsutil` reports. It is created by `RefsSetupUsnJournal` and has existed since v3.4, but it
 is only present where the [USN journal](../structures/usn_journal.md) has actually been activated, which
 is why it is rare on disk. EFS, despite also being a "logged utility stream" in name, uses a *different*
 code path (type 0x100) — do not conflate the two.
@@ -171,8 +179,10 @@ reparse data. The names a forensic tool should recognise:
 The file attribute flag `0x40000` marks the presence of extended attributes. Read it from the object's
 own `$SI` — the type-0x10 row for an embedded record, or the
 [type-0x40 backing record](../structures/extent_descriptors.md) at value+0x48 for a split one. The
-attribute copy cached in a type-0x30 index entry (value+0x40) is an **incomplete** copy: it can be
-missing this bit, and it never sets one the backing does not, so it is a lower bound. A tool that reads
+attribute copy cached in a type-0x30 index entry (value+0x40) is an **incomplete and occasionally
+divergent** copy. It is usually a lower bound — it drops bits the backing carries — but it is **not one
+strictly**: on **57 of 223,374** size-matched split names, over 8 images, the index copy sets a bit the
+backing lacks, and in every one of those cases the extra bit is the transient **Archive bit 0x20**. A tool that reads
 the directory entry alone reports no extended attributes for some files that have them. WSL
 special files (FIFOs, sockets, character/block devices) additionally appear as
 [reparse points](../structures/reparse_points.md) whose tag encodes the Linux file type, with the type
@@ -209,9 +219,16 @@ Two NTFS names that have no ReFS structure behind them are worth stating: `$OBJE
 slot (object identity *is* the OID, mapped by the Object Table), and `$INDEX_ROOT` is handled at
 object-create time and never persisted as a file sub-record.
 
-Inside an embedded node the key and value **overlap by construction**: `key[0:8]` is the value length as
-a little-endian u64 and `key[8:]` is the start of the value itself. It is one buffer written once, not
-two fields that happen to agree.
+Inside an embedded node `key[0:8]` is the value length as a little-endian u64 — **1,441,268 of
+1,441,461 rows** over 141 images (193 exceptions).
+
+The second half of that — `key[8:]` being the start of the value, one buffer written once — is **true
+only of type `0x39` `$OBJ_LINK`**, and it is true of every one of them: **314,249 rows, all 0x39**. It
+does **not** hold for any other sub-record type, and those are the majority: `0x80 $DATA` 928,502 rows,
+`0x90 $I30_INDEX` 87,674, `0xD0` 49,353, `0xE0` 49,309, `0xB0` 5,828, `0xC0` 4,206, `0x03` 1,526, and the
+v3.4 `0x38 $OBJ_LINK` 523 — **1,127,212 rows where `key[8:]` is not the value**. Overlap is 21.8 % of
+embedded rows, not a property of the node form, so read the value from the value and never from `key[8:]`
+unless the row is a 0x39.
 
 ## Evidence
 
@@ -227,8 +244,9 @@ dual-marker taxonomy), **FS_SCHM_RA_005/006/007** (schemas 0x1B0–0x200), **MD_
 `$REPARSE_POINT`, EA), **MD_ATTR_RA_003** (the 0x40000 EA-present flag) and **MD_ATTR_RA_019** (read it
 from the backing, not the index entry). Breadth is narrow and stated as measured: exactly one corpus
 volume carries extended attributes on split records, and on it the cached copy drops the bit for 8,141
-names, agrees for 14,207, and never sets a bit the backing lacks; the only two bits that ever differ
-between the two copies are 0x40000 and the transient Archive bit 0x20. Also registered for statements on this page: **MD_ATTR_006**. The multi-level embedded attribute tree is **MD_ATTR_RA_020**, the key/value overlap inside an embedded node is **MD_ATTR_RA_007**, and `$OBJECT_ID`'s absence of a schema slot is **MD_ATTR_004**. See
+names and agrees for 14,207; the only two bits that ever differ between the two copies are 0x40000 and
+the transient Archive bit 0x20 — and 0x20 is the one that can go the *other* way, set in the index copy
+while the backing lacks it (57 names of 223,374 corpus-wide). Also registered for statements on this page: **MD_ATTR_006**. The multi-level embedded attribute tree is **MD_ATTR_RA_020**, the key/value overlap inside an embedded node is **MD_ATTR_RA_007**, and `$OBJECT_ID`'s absence of a schema slot is **MD_ATTR_004**. See
 [how this was verified](../methodology.md) to trace these to the exact images and measurements in
 `analysis/`.
 

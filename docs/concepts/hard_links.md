@@ -2,14 +2,54 @@
 
 > A hard link splits the file's **record** out of the name row and moves **no data**: its bytes stay wherever they were, inline or in extents. The two properties are explained on [Record placement and data residency](placement_and_residency.md).
 
-A hard link is a second (or third, ...) directory name that points at one physical file. On ReFS the
-mechanism is unusual enough that a parser written for NTFS will get the link count wrong every time:
-there is **no explicit `HardLinkCount` field anywhere on disk**, and the value at
-[`$SI`](../attributes/STANDARD_INFORMATION.md) offset 0x70 — the field whose PDB name *is*
-"HardLinkCount" — is an embedded-layout per-FCB scalar that always reads 1, never the number of names.
-For an analyst this has two consequences. First, link relationships must be **reconstructed by joining
-directory-entry fields**, not read from a counter. Second, the join exposes a fact a live directory
-listing never surfaces: the directory a file was *first created in*.
+A hard link is a second (or third, ...) directory name that points at one physical file. On ReFS
+**where you read the count from decides whether you get it right**, and a parser written for NTFS
+usually reads the wrong copy.
+
+The field at [`$SI`](../attributes/STANDARD_INFORMATION.md) offset 0x70 — whose PDB name *is*
+"HardLinkCount" — behaves differently in the two record forms:
+
+* In an **embedded** record (`key_flags` 0x01) it always reads **1**: 329,120 of 329,120 rows over 141
+  images. A file with several names does not keep its count here.
+* In a **type-0x40 backing** — the split-out record that carries the file's own `$SI` — it **is** the
+  count. Over **107,525 backings on 78 images** it reads greater than 1 on **101,252 (94.2 %)**
+  (`{2: 91,337, 3: 6,489, 4: 2,793, …}`), and it equals the number of size-matched names for that
+  `(home, file_id, size)` on **107,355 of 107,525 — 99.84 %**. On `win11refs2gtargeted`, where this
+  project holds `fsutil hardlink` ground truth of **4 / 2 / 1**, the three backings read **4 / 2 / 1**.
+
+So the counter exists on disk, and it is trustworthy on backings.
+
+## Per-name timestamps: the mechanism, and why the evidence is perishable
+
+A file's names can disagree on their timestamps, and that disagreement is the
+[`HARDLINK_MACB_MISMATCH`](timestomp_detection.md) signal. Two layers explain it, and they refresh at
+different times:
+
+* The **file's own record** takes a new timestamp **immediately** — a `SetFileTime` through one name
+  updates every name at once, in the sense that the file has one truth.
+* Each **name's index entry** is a **lazily refreshed cache** of that truth. `RefsUpdateFileDupInfo`
+  refreshes only the entry belonging to the name that was **opened**; the other names stay stale until
+  each of them is opened.
+
+Three consequences an examiner should hold onto:
+
+1. **Divergence between a file's names is evidence.** Nothing routine produces it.
+2. **Agreement clears nothing**, because it has two causes — the names never diverged, or they diverged
+   and something opened the sibling since.
+3. **A read destroys it.** Any open refreshes that name's entry: an antivirus scan, a search indexer, an
+   inventory pass, a `Get-FileHash` sweep, or the examiner's own `dir`.
+
+Measured on a controlled pair differing by exactly one recorded action (`read-sibling-name-ONLY`):
+before, one name is HIGH carrying the mismatch and the sibling shows the **pre-stomp** birth; after
+**merely reading** the sibling, the mismatch is gone and the sibling is not flagged at all.
+
+Which name holds the authentic birth is still **not** established — the mechanism says which entry was
+refreshed last, not which timestamp is true. **Image before anything touches the volume.** It is still not sufficient on its own:
+it is absent from embedded records, and the 170 residual backings (0.16 %) read 2 with one surviving name
+— a deleted or unreachable second name, which is itself a finding rather than an error. Link
+*relationships* — which names share the file — must still be **reconstructed by joining directory-entry
+fields**, and that join exposes a fact a live directory listing never surfaces: the directory a file was
+*first created in*.
 
 ## Why ReFS has no link counter
 

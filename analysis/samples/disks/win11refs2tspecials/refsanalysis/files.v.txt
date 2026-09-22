@@ -312,8 +312,8 @@ ReFS Directory Tree
   FILE  (non-res)    Archive        454363 2026-05-16 16:41:34  test/xbpt_zulu_hotel_479124.bin
   DIR   0x702        Directory             2026-05-16 16:37:08  testspecials
   FILE  (resident)   Archive             0 2025-01-30 16:36:49  testspecials/alpha_backup_597620.dat
-   ADS                                  47                      testspecials/alpha_backup_597620.dat:hidden_5547
    ADS                                  47                      testspecials/alpha_backup_597620.dat:hidden_3867
+   ADS                                  47                      testspecials/alpha_backup_597620.dat:hidden_5547
   FILE  (non-res)    Archive        161304 2026-05-16 16:37:08  testspecials/alpha_sierra_613558.ini
   FILE  (non-res)    Archive         14876 2026-05-16 16:34:37  testspecials/cache_romeo_901499.xml
   DIR   0x716        Directory             2026-05-16 16:37:07  testspecials/dir_gamma_163068
@@ -325,9 +325,9 @@ ReFS Directory Tree
   FILE  (non-res)    Archive|ReparsePoint          0 2026-05-16 16:34:51  testspecials/dir_gamma_163068/dir_alpha_598099/dir_index_953906/hardlink_sync_683343.lnk
   FILE  (non-res)    Archive        218785 2026-05-16 16:34:39  testspecials/dir_gamma_163068/dir_alpha_598099/dir_index_953906/hardlink_uniform_706791.bin
   FILE  (non-res)    Archive        502037 2026-05-16 16:35:49  testspecials/dir_gamma_163068/dir_alpha_598099/dir_index_953906/lima_tango_491721.txt
-   ADS                                  47                      testspecials/dir_gamma_163068/dir_alpha_598099/dir_index_953906/lima_tango_491721.txt:hidden_9715
-   ADS                                  47                      testspecials/dir_gamma_163068/dir_alpha_598099/dir_index_953906/lima_tango_491721.txt:hidden_7804
    ADS                                  47                      testspecials/dir_gamma_163068/dir_alpha_598099/dir_index_953906/lima_tango_491721.txt:hidden_7667
+   ADS                                  47                      testspecials/dir_gamma_163068/dir_alpha_598099/dir_index_953906/lima_tango_491721.txt:hidden_7804
+   ADS                                  47                      testspecials/dir_gamma_163068/dir_alpha_598099/dir_index_953906/lima_tango_491721.txt:hidden_9715
   FILE  (non-res)    Archive        413666 2026-05-16 16:37:03  testspecials/dir_gamma_163068/dir_alpha_598099/dir_index_953906/lima_victor_148410.cfg
   DIR   0x73f        Directory             2026-05-16 16:36:48  testspecials/dir_gamma_163068/dir_alpha_598099/dir_trace_251622
   DIR   0x75c        Directory             2026-05-16 16:36:02  testspecials/dir_gamma_163068/dir_alpha_598099/dir_trace_251622/dir_quebec_246472
@@ -377,11 +377,11 @@ ReFS Directory Tree
   FILE  (non-res)    Archive         14876 2026-05-16 16:36:25  testspecials/dir_gamma_163068/dir_echo_659970/dir_cache_507104/dir_archive_409111/dir_romeo_975581/hardlink_sync_617075.xml
   FILE  (non-res)    Archive        502037 2026-05-16 16:37:08  testspecials/dir_gamma_163068/dir_echo_659970/dir_cache_507104/dir_archive_409111/dir_romeo_975581/hardlink_sync_966265.txt
   FILE  (non-res)    Archive        197072 2026-05-16 16:36:56  testspecials/dir_gamma_163068/dir_echo_659970/dir_cache_507104/dir_archive_409111/dir_romeo_975581/hotel_whiskey_254415.xml
-   ADS                                  47                      testspecials/dir_gamma_163068/dir_echo_659970/dir_cache_507104/dir_archive_409111/dir_romeo_975581/hotel_whiskey_254415.xml:hidden_9345
-   ADS                                  47                      testspecials/dir_gamma_163068/dir_echo_659970/dir_cache_507104/dir_archive_409111/dir_romeo_975581/hotel_whiskey_254415.xml:hidden_8537
-   ADS                                  47                      testspecials/dir_gamma_163068/dir_echo_659970/dir_cache_507104/dir_archive_409111/dir_romeo_975581/hotel_whiskey_254415.xml:hidden_7989
-   ADS                                  47                      testspecials/dir_gamma_163068/dir_echo_659970/dir_cache_507104/dir_archive_409111/dir_romeo_975581/hotel_whiskey_254415.xml:hidden_5535
    ADS                                  47                      testspecials/dir_gamma_163068/dir_echo_659970/dir_cache_507104/dir_archive_409111/dir_romeo_975581/hotel_whiskey_254415.xml:hidden_2674
+   ADS                                  47                      testspecials/dir_gamma_163068/dir_echo_659970/dir_cache_507104/dir_archive_409111/dir_romeo_975581/hotel_whiskey_254415.xml:hidden_5535
+   ADS                                  47                      testspecials/dir_gamma_163068/dir_echo_659970/dir_cache_507104/dir_archive_409111/dir_romeo_975581/hotel_whiskey_254415.xml:hidden_7989
+   ADS                                  47                      testspecials/dir_gamma_163068/dir_echo_659970/dir_cache_507104/dir_archive_409111/dir_romeo_975581/hotel_whiskey_254415.xml:hidden_8537
+   ADS                                  47                      testspecials/dir_gamma_163068/dir_echo_659970/dir_cache_507104/dir_archive_409111/dir_romeo_975581/hotel_whiskey_254415.xml:hidden_9345
   FILE  (non-res)    Archive        480017 2026-02-19 16:34:43  testspecials/dir_gamma_163068/dir_echo_659970/dir_cache_507104/dir_archive_409111/dir_romeo_975581/log_papa_426305.bin
   FILE  (non-res)    Archive        174789 2026-05-16 16:34:44  testspecials/dir_gamma_163068/dir_echo_659970/dir_cache_507104/dir_archive_409111/dir_romeo_975581/output_india_449169.md
   FILE  (non-res)    Archive|ReparsePoint          0 2026-05-16 16:34:52  testspecials/dir_gamma_163068/dir_echo_659970/dir_cache_507104/dir_archive_409111/dir_romeo_975581/symlink_foxtrot_698630.lnk
@@ -724,8 +724,8 @@ ReFS Directory Tree
   FILE  (non-res)    Archive|ReparsePoint          0 2026-05-16 16:34:42  testspecials/dir_november_947335/dir_india_538407/dir_draft_269665/hardlink_oscar_715955.lnk
   FILE  (non-res)    Archive        341247 2026-05-16 16:36:17  testspecials/dir_november_947335/dir_india_538407/dir_draft_269665/log_draft_724379.txt
   FILE  (non-res)    Archive        400814 2026-05-16 16:36:57  testspecials/dir_november_947335/dir_india_538407/dir_draft_269665/log_quebec_308911.dat
-   ADS                                  47                      testspecials/dir_november_947335/dir_india_538407/dir_draft_269665/log_quebec_308911.dat:hidden_5859
    ADS                                  47                      testspecials/dir_november_947335/dir_india_538407/dir_draft_269665/log_quebec_308911.dat:hidden_2097
+   ADS                                  47                      testspecials/dir_november_947335/dir_india_538407/dir_draft_269665/log_quebec_308911.dat:hidden_5859
   FILE  (resident)   Archive|ReparsePoint          0 2026-05-16 16:36:31  testspecials/dir_november_947335/dir_india_538407/dir_draft_269665/symlink_delta_791647.lnk
   FILE  (non-res)    Archive        105389 2026-05-16 16:36:42  testspecials/dir_november_947335/dir_india_538407/dir_draft_269665/sync_record_864216.md
    ADS                                  47                      testspecials/dir_november_947335/dir_india_538407/dir_draft_269665/sync_record_864216.md:hidden_2096
@@ -737,8 +737,8 @@ ReFS Directory Tree
   DIR   0x74a        Directory             2026-05-16 16:35:45  testspecials/dir_november_947335/dir_india_538407/dir_lima_396840/dir_draft_855171/dir_lima_128289
   FILE  (non-res)    Archive|ReparsePoint          0 2026-05-16 16:34:35  testspecials/dir_november_947335/dir_india_538407/dir_lima_396840/dir_draft_855171/dir_lima_128289/hardlink_hotel_528176.lnk
   FILE  (non-res)    Archive         91403 2026-05-16 16:36:15  testspecials/dir_november_947335/dir_india_538407/dir_lima_396840/dir_draft_855171/dir_lima_128289/whiskey_delta_401155.lnk
-   ADS                                  47                      testspecials/dir_november_947335/dir_india_538407/dir_lima_396840/dir_draft_855171/dir_lima_128289/whiskey_delta_401155.lnk:hidden_7131
    ADS                                  47                      testspecials/dir_november_947335/dir_india_538407/dir_lima_396840/dir_draft_855171/dir_lima_128289/whiskey_delta_401155.lnk:hidden_6098
+   ADS                                  47                      testspecials/dir_november_947335/dir_india_538407/dir_lima_396840/dir_draft_855171/dir_lima_128289/whiskey_delta_401155.lnk:hidden_7131
   DIR   0x746        Directory             2026-05-16 16:36:41  testspecials/dir_november_947335/dir_india_538407/dir_lima_396840/dir_draft_855171/dir_report_943963
   FILE  (non-res)    Archive        478125 2026-05-16 16:35:13  testspecials/dir_november_947335/dir_india_538407/dir_lima_396840/dir_draft_855171/dir_report_943963/hardlink_draft_747208.cfg
   FILE  (non-res)    Archive|ReparsePoint          0 2026-05-16 16:34:31  testspecials/dir_november_947335/dir_india_538407/dir_lima_396840/dir_draft_855171/dir_report_943963/hardlink_oscar_423663.lnk
@@ -784,9 +784,9 @@ ReFS Directory Tree
   FILE  (non-res)    Archive         77841 2026-05-16 16:35:34  testspecials/dir_november_947335/dir_mike_527964/hardlink_record_756488.ini
   FILE  (non-res)    Archive|ReparsePoint          0 2026-05-16 16:34:27  testspecials/dir_november_947335/dir_mike_527964/hardlink_temp_252938.lnk
   FILE  (non-res)    Archive        387261 2026-05-16 16:34:54  testspecials/dir_november_947335/dir_mike_527964/papa_romeo_945623.bin
-   ADS                                  47                      testspecials/dir_november_947335/dir_mike_527964/papa_romeo_945623.bin:hidden_6543
-   ADS                                  47                      testspecials/dir_november_947335/dir_mike_527964/papa_romeo_945623.bin:hidden_4857
    ADS                                  47                      testspecials/dir_november_947335/dir_mike_527964/papa_romeo_945623.bin:hidden_1662
+   ADS                                  47                      testspecials/dir_november_947335/dir_mike_527964/papa_romeo_945623.bin:hidden_4857
+   ADS                                  47                      testspecials/dir_november_947335/dir_mike_527964/papa_romeo_945623.bin:hidden_6543
   FILE  (non-res)    Archive|ReparsePoint          0 2026-05-16 16:34:55  testspecials/dir_november_947335/dir_mike_527964/symlink_alpha_330007.lnk
   FILE  (resident)   Archive|ReparsePoint          0 2026-05-16 16:35:05  testspecials/dir_november_947335/dir_mike_527964/symlink_log_868978.lnk
   FILE  (resident)   Archive|ReparsePoint          0 2026-05-16 16:35:59  testspecials/dir_november_947335/dir_mike_527964/symlink_uniform_825809.lnk
@@ -808,12 +808,12 @@ ReFS Directory Tree
   FILE  (non-res)    Archive|ReparsePoint          0 2026-05-16 16:34:28  testspecials/dir_november_947335/dir_oscar_742900/zulu_papa_691621.lnk
   DIR   0x719        Directory             2026-05-16 16:37:08  testspecials/dir_november_947335/dir_sync_924581
   FILE  (non-res)    Archive        502037 2026-05-16 16:35:49  testspecials/dir_november_947335/dir_sync_924581/archive_india_740208.lnk
-   ADS                                  47                      testspecials/dir_november_947335/dir_sync_924581/archive_india_740208.lnk:hidden_9715
-   ADS                                  47                      testspecials/dir_november_947335/dir_sync_924581/archive_india_740208.lnk:hidden_7804
    ADS                                  47                      testspecials/dir_november_947335/dir_sync_924581/archive_india_740208.lnk:hidden_7667
+   ADS                                  47                      testspecials/dir_november_947335/dir_sync_924581/archive_india_740208.lnk:hidden_7804
+   ADS                                  47                      testspecials/dir_november_947335/dir_sync_924581/archive_india_740208.lnk:hidden_9715
   FILE  (non-res)    Archive          3138 2026-05-16 16:36:02  testspecials/dir_november_947335/dir_sync_924581/cache_beta_965254.ini
-   ADS                                  47                      testspecials/dir_november_947335/dir_sync_924581/cache_beta_965254.ini:hidden_4853
    ADS                                  47                      testspecials/dir_november_947335/dir_sync_924581/cache_beta_965254.ini:hidden_4055
+   ADS                                  47                      testspecials/dir_november_947335/dir_sync_924581/cache_beta_965254.ini:hidden_4853
   FILE  (non-res)    Archive        479429 2026-05-16 16:36:14  testspecials/dir_november_947335/dir_sync_924581/cache_output_350817.lnk
    ADS                                  47                      testspecials/dir_november_947335/dir_sync_924581/cache_output_350817.lnk:hidden_7217
   DIR   0x71d        Directory             2026-05-16 16:37:13  testspecials/dir_november_947335/dir_sync_924581/dir_backup_133264
@@ -979,22 +979,22 @@ ReFS Directory Tree
   FILE  (non-res)    Archive|ReparsePoint          0 2026-05-16 16:34:37  testspecials/hotel_whiskey_430948.lnk
   FILE  (non-res)    Archive        148666 2026-05-16 16:36:21  testspecials/india_delta_830844.log
   FILE  (non-res)    Archive        123379 2026-05-16 16:34:33  testspecials/november_draft_655043.lnk
-   ADS                                  47                      testspecials/november_draft_655043.lnk:hidden_5920
    ADS                                  47                      testspecials/november_draft_655043.lnk:hidden_4629
+   ADS                                  47                      testspecials/november_draft_655043.lnk:hidden_5920
   FILE  (resident)   Archive|ReparsePoint          0 2026-05-16 16:35:07  testspecials/symlink_gamma_119189.lnk
   FILE  (non-res)    Archive|ReparsePoint          0 2026-05-16 16:36:08  testspecials/symlink_index_352405.lnk
   FILE  (resident)   Archive|ReparsePoint          0 2026-05-16 16:35:42  testspecials/symlink_oscar_411250.lnk
   FILE  (resident)   Archive|ReparsePoint          0 2026-05-16 16:35:15  testspecials/symlink_quebec_150555.lnk
   FILE  (resident)   Archive|ReparsePoint          0 2026-05-16 16:34:59  testspecials/symlink_record_238832.lnk
   FILE  (resident)   Archive             0 2026-05-16 16:36:32  testspecials/tango_lima_351713.tmp
-   ADS                                  47                      testspecials/tango_lima_351713.tmp:hidden_8943
-   ADS                                  47                      testspecials/tango_lima_351713.tmp:hidden_5230
    ADS                                  47                      testspecials/tango_lima_351713.tmp:hidden_4046
+   ADS                                  47                      testspecials/tango_lima_351713.tmp:hidden_5230
+   ADS                                  47                      testspecials/tango_lima_351713.tmp:hidden_8943
   FILE  (non-res)    Archive        197072 2026-05-16 16:36:23  testspecials/temp_gamma_969300.xml
-   ADS                                  47                      testspecials/temp_gamma_969300.xml:hidden_9345
-   ADS                                  47                      testspecials/temp_gamma_969300.xml:hidden_7989
-   ADS                                  47                      testspecials/temp_gamma_969300.xml:hidden_2674
    ADS                                  47                      testspecials/temp_gamma_969300.xml:hidden_2162
+   ADS                                  47                      testspecials/temp_gamma_969300.xml:hidden_2674
+   ADS                                  47                      testspecials/temp_gamma_969300.xml:hidden_7989
+   ADS                                  47                      testspecials/temp_gamma_969300.xml:hidden_9345
   FILE  (non-res)    Archive        150307 2026-05-16 16:34:30  testspecials/victor_echo_265953.bak
   DIR   0x775        Directory             2026-05-16 16:40:45  testspecials2
   FILE  (non-res)    Archive        119857 2026-05-16 16:38:10  testspecials2/backup_draft_705865.log
@@ -1005,15 +1005,15 @@ ReFS Directory Tree
   FILE  (non-res)    Archive         96978 2026-05-16 16:39:21  testspecials2/delta_papa_312447.json
   DIR   0x779        Directory             2026-05-16 16:40:22  testspecials2/dir_kilo_616914
   FILE  (non-res)    Archive        166308 2026-05-16 16:37:44  testspecials2/dir_kilo_616914/audit_delta_706583.json
-   ADS                                  47                      testspecials2/dir_kilo_616914/audit_delta_706583.json:hidden_3629
    ADS                                  47                      testspecials2/dir_kilo_616914/audit_delta_706583.json:hidden_3314
+   ADS                                  47                      testspecials2/dir_kilo_616914/audit_delta_706583.json:hidden_3629
   FILE  (non-res)    Archive        304001 2026-05-16 16:40:16  testspecials2/dir_kilo_616914/delta_audit_215784.md
   DIR   0x78b        Directory             2026-05-16 16:40:23  testspecials2/dir_kilo_616914/dir_backup_630871
   FILE  (non-res)    Archive         90060 2026-05-16 16:39:19  testspecials2/dir_kilo_616914/dir_backup_630871/alpha_delta_986365.bak
    ADS                                  47                      testspecials2/dir_kilo_616914/dir_backup_630871/alpha_delta_986365.bak:hidden_4071
   FILE  (non-res)    Archive        433993 2026-05-16 16:39:25  testspecials2/dir_kilo_616914/dir_backup_630871/alpha_sync_934987.bak
-   ADS                                  47                      testspecials2/dir_kilo_616914/dir_backup_630871/alpha_sync_934987.bak:hidden_8724
    ADS                                  47                      testspecials2/dir_kilo_616914/dir_backup_630871/alpha_sync_934987.bak:hidden_7109
+   ADS                                  47                      testspecials2/dir_kilo_616914/dir_backup_630871/alpha_sync_934987.bak:hidden_8724
   FILE  (non-res)    Archive        318792 2026-05-16 16:39:15  testspecials2/dir_kilo_616914/dir_backup_630871/backup_data_703570.txt
   FILE  (non-res)    Archive        336341 2026-05-16 16:38:56  testspecials2/dir_kilo_616914/dir_backup_630871/config_beta_363738.log
   FILE  (non-res)    Archive        300868 2026-05-16 16:37:44  testspecials2/dir_kilo_616914/dir_backup_630871/gamma_tango_178044.dat
@@ -1025,13 +1025,13 @@ ReFS Directory Tree
   FILE  (non-res)    Archive|ReparsePoint          0 2026-05-16 16:38:14  testspecials2/dir_kilo_616914/dir_backup_630871/hardlink_temp_113223.lnk
   FILE  (non-res)    Archive        293997 2026-05-16 16:40:48  testspecials2/dir_kilo_616914/dir_backup_630871/hardlink_whiskey_549936.md
   FILE  (non-res)    Archive        359972 2026-05-16 16:39:58  testspecials2/dir_kilo_616914/dir_backup_630871/hotel_tango_211756.txt
-   ADS                                  47                      testspecials2/dir_kilo_616914/dir_backup_630871/hotel_tango_211756.txt:hidden_8658
    ADS                                  47                      testspecials2/dir_kilo_616914/dir_backup_630871/hotel_tango_211756.txt:hidden_6796
+   ADS                                  47                      testspecials2/dir_kilo_616914/dir_backup_630871/hotel_tango_211756.txt:hidden_8658
   FILE  (non-res)    Archive        251478 2026-05-16 16:40:20  testspecials2/dir_kilo_616914/dir_backup_630871/kilo_draft_266948.cfg
    ADS                                  47                      testspecials2/dir_kilo_616914/dir_backup_630871/kilo_draft_266948.cfg:hidden_3401
   FILE  (non-res)    Archive         88313 2026-05-16 16:39:03  testspecials2/dir_kilo_616914/dir_backup_630871/sierra_kilo_783752.tmp
-   ADS                                  47                      testspecials2/dir_kilo_616914/dir_backup_630871/sierra_kilo_783752.tmp:hidden_4719
    ADS                                  47                      testspecials2/dir_kilo_616914/dir_backup_630871/sierra_kilo_783752.tmp:hidden_2781
+   ADS                                  47                      testspecials2/dir_kilo_616914/dir_backup_630871/sierra_kilo_783752.tmp:hidden_4719
   FILE  (resident)   Archive|ReparsePoint          0 2026-05-16 16:38:29  testspecials2/dir_kilo_616914/dir_backup_630871/symlink_log_111325.lnk
   FILE  (resident)   Archive|ReparsePoint          0 2026-05-16 16:38:17  testspecials2/dir_kilo_616914/dir_backup_630871/symlink_mike_131286.lnk
   FILE  (resident)   Archive|ReparsePoint          0 2026-05-16 16:38:47  testspecials2/dir_kilo_616914/dir_backup_630871/symlink_zulu_906328.lnk
@@ -1180,8 +1180,8 @@ ReFS Directory Tree
   FILE  (non-res)    ReparsePoint          0 2026-05-16 16:38:08  testspecials2/dir_kilo_616914/dir_victor_389261/dir_yankee_150988/dir_papa_820469/dir_papa_622200/hardlink_log_235932.lnk
   FILE  (non-res)    Archive        345507 2026-05-16 16:38:15  testspecials2/dir_kilo_616914/dir_victor_389261/dir_yankee_150988/dir_papa_820469/dir_papa_622200/record_delta_539117.md
   FILE  (non-res)    Archive         11226 2026-05-16 16:38:32  testspecials2/dir_kilo_616914/dir_victor_389261/dir_yankee_150988/dir_papa_820469/dir_papa_622200/report_beta_720652.ini
-   ADS                                  47                      testspecials2/dir_kilo_616914/dir_victor_389261/dir_yankee_150988/dir_papa_820469/dir_papa_622200/report_beta_720652.ini:hidden_7753
    ADS                                  47                      testspecials2/dir_kilo_616914/dir_victor_389261/dir_yankee_150988/dir_papa_820469/dir_papa_622200/report_beta_720652.ini:hidden_2527
+   ADS                                  47                      testspecials2/dir_kilo_616914/dir_victor_389261/dir_yankee_150988/dir_papa_820469/dir_papa_622200/report_beta_720652.ini:hidden_7753
   FILE  (resident)   Archive|ReparsePoint          0 2026-05-16 16:37:58  testspecials2/dir_kilo_616914/dir_victor_389261/dir_yankee_150988/dir_papa_820469/dir_papa_622200/symlink_delta_931926.lnk
   FILE  (non-res)    Archive|ReparsePoint          0 2026-05-16 16:38:04  testspecials2/dir_kilo_616914/dir_victor_389261/dir_yankee_150988/dir_papa_820469/dir_papa_622200/symlink_romeo_188012.lnk
   FILE  (non-res)    Archive|ReparsePoint          0 2026-05-16 16:37:43  testspecials2/dir_kilo_616914/dir_victor_389261/dir_yankee_150988/dir_papa_820469/hardlink_audit_955008.lnk
@@ -1260,8 +1260,8 @@ ReFS Directory Tree
    ADS                                  47                      testspecials2/dir_kilo_616914/yankee_india_996670.tmp:hidden_7649
   DIR   0x776        Directory             2026-05-16 16:40:37  testspecials2/dir_log_298284
   FILE  (non-res)    Archive        230976 2026-05-16 16:38:02  testspecials2/dir_log_298284/archive_sierra_385249.dat
-   ADS                                  47                      testspecials2/dir_log_298284/archive_sierra_385249.dat:hidden_8099
    ADS                                  47                      testspecials2/dir_log_298284/archive_sierra_385249.dat:hidden_5657
+   ADS                                  47                      testspecials2/dir_log_298284/archive_sierra_385249.dat:hidden_8099
   FILE  (non-res)    Archive        380292 2026-05-16 16:38:41  testspecials2/dir_log_298284/cache_alpha_884840.txt
   FILE  (non-res)    Archive        244308 2026-05-16 16:39:45  testspecials2/dir_log_298284/cache_victor_115152.csv
   FILE  (non-res)    Archive        126206 2026-05-16 16:37:46  testspecials2/dir_log_298284/data_report_421046.csv
@@ -1294,8 +1294,8 @@ ReFS Directory Tree
   FILE  (non-res)    Archive        146627 2026-05-16 16:38:33  testspecials2/dir_log_298284/dir_draft_685915/dir_papa_627382/hardlink_zulu_120968.dat
   FILE  (non-res)    Archive|ReparsePoint          0 2026-05-16 16:37:54  testspecials2/dir_log_298284/dir_draft_685915/dir_papa_627382/hotel_lima_179937.lnk
   FILE  (non-res)    Archive        308051 2026-05-16 16:38:13  testspecials2/dir_log_298284/dir_draft_685915/dir_papa_627382/romeo_output_468862.log
-   ADS                                  47                      testspecials2/dir_log_298284/dir_draft_685915/dir_papa_627382/romeo_output_468862.log:hidden_6977
    ADS                                  47                      testspecials2/dir_log_298284/dir_draft_685915/dir_papa_627382/romeo_output_468862.log:hidden_4578
+   ADS                                  47                      testspecials2/dir_log_298284/dir_draft_685915/dir_papa_627382/romeo_output_468862.log:hidden_6977
   FILE  (resident)   Archive|ReparsePoint          0 2026-05-16 16:38:27  testspecials2/dir_log_298284/dir_draft_685915/dir_papa_627382/symlink_backup_511464.lnk
   FILE  (non-res)    Archive|ReparsePoint          0 2026-05-16 16:38:09  testspecials2/dir_log_298284/dir_draft_685915/dir_papa_627382/symlink_draft_534958.lnk
   FILE  (resident)   Archive|ReparsePoint          0 2026-05-16 16:38:22  testspecials2/dir_log_298284/dir_draft_685915/dir_papa_627382/symlink_quebec_304098.lnk
@@ -1482,9 +1482,9 @@ ReFS Directory Tree
   DIR   0x7b7        Directory             2026-05-16 16:40:17  testspecials2/dir_oscar_397968/dir_zulu_210476/dir_beta_287500
   DIR   0x77e        Directory             2026-05-16 16:39:38  testspecials2/dir_oscar_397968/dir_zulu_210476/dir_beta_287500/dir_archive_157527
   FILE  (non-res)    Archive        386397 2026-05-16 16:38:26  testspecials2/dir_oscar_397968/dir_zulu_210476/dir_beta_287500/dir_archive_157527/archive_output_434698.txt
-   ADS                                  47                      testspecials2/dir_oscar_397968/dir_zulu_210476/dir_beta_287500/dir_archive_157527/archive_output_434698.txt:hidden_8220
-   ADS                                  47                      testspecials2/dir_oscar_397968/dir_zulu_210476/dir_beta_287500/dir_archive_157527/archive_output_434698.txt:hidden_7631
    ADS                                  47                      testspecials2/dir_oscar_397968/dir_zulu_210476/dir_beta_287500/dir_archive_157527/archive_output_434698.txt:hidden_6334
+   ADS                                  47                      testspecials2/dir_oscar_397968/dir_zulu_210476/dir_beta_287500/dir_archive_157527/archive_output_434698.txt:hidden_7631
+   ADS                                  47                      testspecials2/dir_oscar_397968/dir_zulu_210476/dir_beta_287500/dir_archive_157527/archive_output_434698.txt:hidden_8220
   FILE  (non-res)    Archive        510628 2026-05-16 16:39:38  testspecials2/dir_oscar_397968/dir_zulu_210476/dir_beta_287500/dir_archive_157527/beta_uniform_110668.bak
   FILE  (non-res)    Archive        112233 2026-05-16 16:39:18  testspecials2/dir_oscar_397968/dir_zulu_210476/dir_beta_287500/dir_archive_157527/delta_backup_764167.json
    ADS                                  47                      testspecials2/dir_oscar_397968/dir_zulu_210476/dir_beta_287500/dir_archive_157527/delta_backup_764167.json:hidden_2858
@@ -1653,14 +1653,14 @@ ReFS Directory Tree
   FILE  (non-res)    Archive         13825 2026-05-16 16:38:42  testspecials2/lima_sync_256026.cfg
   FILE  (non-res)    Archive        282007 2021-11-16 16:37:57  testspecials2/mike_cache_429213.bak
   FILE  (resident)   Archive             0 2023-11-23 16:38:08  testspecials2/mike_index_889080.lnk
-   ADS                                  47                      testspecials2/mike_index_889080.lnk:hidden_9063
-   ADS                                  47                      testspecials2/mike_index_889080.lnk:hidden_6012
-   ADS                                  47                      testspecials2/mike_index_889080.lnk:hidden_5019
    ADS                                  47                      testspecials2/mike_index_889080.lnk:hidden_2460
+   ADS                                  47                      testspecials2/mike_index_889080.lnk:hidden_5019
+   ADS                                  47                      testspecials2/mike_index_889080.lnk:hidden_6012
+   ADS                                  47                      testspecials2/mike_index_889080.lnk:hidden_9063
   FILE  (non-res)    Archive        470303 2026-05-16 16:37:48  testspecials2/november_papa_479034.log
   FILE  (resident)   Archive             0 2026-05-16 16:37:54  testspecials2/output_zulu_513021.log
-   ADS                                  47                      testspecials2/output_zulu_513021.log:hidden_9589
    ADS                                  47                      testspecials2/output_zulu_513021.log:hidden_8241
+   ADS                                  47                      testspecials2/output_zulu_513021.log:hidden_9589
   FILE  (non-res)    Archive        185287 2026-05-16 16:37:49  testspecials2/quebec_record_289611.log
   FILE  (non-res)    Archive        394533 2026-05-16 16:38:18  testspecials2/report_index_323365.dat
   FILE  (non-res)    Archive             0 2026-05-16 16:39:33  testspecials2/romeo_india_410311.log

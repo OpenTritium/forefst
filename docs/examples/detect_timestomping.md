@@ -27,13 +27,12 @@ Actual output (header + first suspects):
 ==============================================================================
 ReFS Timestamp-Anomaly (Timestomp) Detection
 ==============================================================================
-  Image:           <image>.raw  (ReFS 3.14)
-  Volume created:  2026-09-01 09:32:39
-  Volume modified: 2026-09-02 08:06:05
+  Image:           win11refstestmftecmd.raw  (ReFS 3.14)
+  Volume created:  2026-05-23 06:04:52
+  Volume modified: 2026-05-23 11:15:52
   USN journal:     present (authoritative cross-check ON)
-  Files examined:  636
-  Flagged:         576  (HIGH 2 / MEDIUM 0 / LOW 0 / INFO 574 — INFO = ambiguous: a timestamp-preserving copy and a backdated creation produce the same signals; corroborate with USN)
-
+  Files examined:  1507
+  Flagged:         194  (HIGH 137 / MEDIUM 0 / LOW 0 / INFO 57 — INFO = ambiguous: a timestamp-preserving copy and a backdated creation produce the same signals; corroborate with USN)
   This flags timestamps that LOOK anomalous — it is investigative INFORMATION, not proof of
   tampering. Weigh the BASIS of each row: a journal/hardlink signal is authoritative; an
   intrinsic ($SI-only) signal is a heuristic that also fires on legitimate timestamp-preserving
@@ -46,24 +45,27 @@ ReFS Timestamp-Anomaly (Timestomp) Detection
              (PRE_FORMAT / CHANGE_LATE / CREATE_GT_MODIFY / ROUND_TIMESTAMPS), so a copy and a
              backdate are indistinguishable here however many of them fire.
     LOW    — anything else.
-
   Conf   Basis         Claimed birth         Last real write       Path
   ------------------------------------------------------------------------------------------------
-  HIGH   journal/link  2026-09-01 09:45:26   2026-09-01 09:45:26   tests/forefst-tools/forefst.py
-         signals: CREATE_GT_MODIFY, USN_BASIC_INFO_CHANGE
-  HIGH   journal/link  2026-09-01 09:45:26   2026-09-01 09:45:26   tests/forefst-tools/refsanalysis.py
-         signals: CREATE_GT_MODIFY, USN_BASIC_INFO_CHANGE
+  HIGH   journal/link  2022-08-02 07:16:28   2026-05-23 07:34:02   test/elvis_dir_record_449015/elvis_dir_lima_252141/elvis_dir_oscar_306778/xbpt_romeo_output_531365.cfg
+         signals: PRE_FORMAT, HARDLINK_MACB_MISMATCH
+  HIGH   journal/link  2026-05-23 07:33:58   2026-05-23 07:34:01   test/elvis_dir_record_449015/elvis_dir_papa_104235/elvis_dir_sync_718743/elvis_dir_gamma_109016/elvis_dir_zulu_984398/elvis_dir_cache_558805/xbpt_hardlink_audit_219848.cfg
+         signals: HARDLINK_MACB_MISMATCH
+  HIGH   journal/link  2026-01-01 07:16:17   2026-05-23 07:38:51   test2/elvis_dir_index_149423/elvis_dir_victor_121923/elvis_dir_hotel_670324/elvis_dir_output_358165/xbpt_audit_echo_178867.tmp
+         signals: PRE_FORMAT, USN_BASIC_INFO_CHANGE, USN_CREATE_MISMATCH
+  HIGH   journal/link  2024-08-03 07:17:33   2026-05-23 07:38:52   test2/elvis_dir_index_149423/elvis_dir_victor_121923/elvis_dir_hotel_670324/elvis_dir_output_358165/xbpt_zulu_india_473528.csv
 ```
 
 The header pins the **volume creation bound** read from `$VOLUME_INFORMATION +0x90`, and
 confirms the USN journal is present so the authoritative cross-check is on.
 
-Read the `Basis` column before the `Conf` column. Both HIGH rows here say **`journal/link`**:
-the USN journal independently recorded a deliberate basic-info edit
-(`USN_BASIC_INFO_CHANGE`), which is evidence outside the timestamps themselves. That is what
-earns HIGH — **a count of intrinsic signals never does**, however many fire.
+Read the `Basis` column before the `Conf` column. Every HIGH row says **`journal/link`**: either the
+USN journal independently recorded a deliberate edit (`USN_BASIC_INFO_CHANGE`,
+`USN_CREATE_MISMATCH`) or two of the file's own hard-link names disagree
+(`HARDLINK_MACB_MISMATCH`) — evidence outside the timestamps themselves. That is what earns HIGH —
+**a count of intrinsic signals never does**, however many fire.
 
-The other 574 rows are `INFO`, and the distinction matters more than the number. A
+The other 57 rows are `INFO`, and the distinction matters more than the number. A
 timestamp-preserving copy (`robocopy /COPY:T`, a restore, an archive extraction) produces
 exactly the same `$SI`-only signals as a deliberate backdate, so on those rows the volume
 cannot separate the two. `INFO` means *ambiguous*, not *cleared* — and not *suspicious*.
@@ -132,8 +134,14 @@ Actual flagged row (one JSONL object, abridged to the fields that matter):
 }
 ```
 
-This is the same file as the first HIGH row in Step 1 — identical path, identical
-`Created` (`2024-08-03 07:17:33`) and `Changed` (`2026-05-23 07:34:05`). The signature
+This is **not** the HIGH row from Step 1 — it is the *other copy of the same forged file*, and the
+difference between them is the whole point. The volume carries `xbpt_zulu_india_473528.csv` twice: this
+one under `test/`, flagged **INFO** on `CHANGE_LATE|PRE_FORMAT` alone, and the one under `test2/` that
+appears in Step 1 as **HIGH**, carrying the same two intrinsic signals *plus*
+`USN_BASIC_INFO_CHANGE` and `USN_CREATE_MISMATCH`. Both were stomped identically; only one left a
+journal record, and only that one reaches HIGH. Their forged birth is the same instant
+(`2024-08-03 07:17:33`); their real last writes differ (`07:34:05` here, `07:38:52` there). The
+signature
 of a common-tool stomp is laid bare here: **B = M = A** were all rewritten to the
 forged 2024 instant in one `SetFileTime`-style call, while **C** (`changed`) stayed at
 the real 2026 write — because the high-level API has no `ChangeTime` parameter to
@@ -151,7 +159,7 @@ present, is what raises the row above INFO.
  would independently confirm the same.
 - Method, not single value: a lone old creation date is only a suspicion. The
  `forefst.py timestomp` HIGH tier means **two independent anchors agree**, which
- on this one ground-truth image produced 114 HIGH detections, all true positives (0 false positives on
+ on this one ground-truth image produced 137 HIGH detections, all true positives (0 false positives on
  the clean control) — a single-image datapoint, not a measured accuracy rate.
 - **There is one surface.** `forefst.py timestomp` is where a timestamp anomaly is judged; `files` carries
  no verdict column. Earlier releases had both, and the listing column — which cannot read the journal —

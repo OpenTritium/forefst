@@ -1,6 +1,160 @@
 # Changelog
 
-## v1.12.3 — unreleased — a retracted claim removed from the tool and every page
+## v1.13.0 — 2026-09-22 — the audit response: wrong bytes, wrong verdicts, and the checks that could not fail
+
+**Everything here is relative to v1.12.3**, and it is the largest correctness release so far. It answers
+a 215-finding external audit: **every `wrong_bytes` finding (18) and every `wrong_verdict` finding (51)
+is now addressed**, each with a failing case built first and a measurement after. `AUDIT_RESPONSE.md`
+lists all 215 with where the answer can be checked.
+
+Exit codes and several messages change. The migration table is in
+`analysis/reports/plan_v11_2026-09-18/MIGRATION_1.13.0.md`; the short version is that **rc 2 now means
+"a finding, OR I could not certify this clean"**, and a command that could not do all its work no longer
+returns 0.
+
+### Files that came out wrong now come out right
+
+- **A truncated image no longer shortens the file, and no longer invents the missing bytes.** Assembling
+  a stream used a slice assignment that *resizes* on a short read, so a read cut off by the end of the
+  image shrank the buffer and every later extent landed shifted — 8,192 bytes delivered for a
+  10,240-byte file, blamed on "a coverage gap or a sparse file" when the extents were perfect and the
+  **image** ended. The bytes present are now placed correctly and the message names the real cause.
+  A range **past the end of the image is known absent**, not ambiguous like a sparse hole, so the output
+  now **ends at the last byte the image holds** rather than being zero-filled to the declared size:
+  measured on a truncated `lab314_main`, the 1,813 bytes beyond the image end are non-zero in the real
+  file, and all 1,813 zeros written in their place were wrong. `--fill-holes` opts back into the old
+  form; both write the `.holes.json` sidecar and exit `2`.
+- **VLCN 0 is no longer read as data.** One reader translated it like any other run and returned
+  **volume cluster 0 — the boot sector** — as file content. It also capped streams at 512 MiB *silently*;
+  it now refuses loudly rather than truncating.
+- **A run that was allocated but never written reads as zeros**, not as whatever the clusters happen to
+  hold. The flag that says "written" is `0x10`; without it the tool was serving stale disk content.
+- **A snapshot version that cannot be resolved is no longer written as a 0-byte file** under that
+  version's name — an artefact indistinguishable from a version that really was empty.
+- **On 64 KiB volumes, a metadata bundle no longer loses the whole change log.** The MLog block index
+  counts 4 KiB blocks; three consumers multiplied it by the cluster size. A freshly made bundle failed
+  its own `verify-bundle` and reported "no redo records" where the image has 13,420.
+
+### Verdicts that ignored their own findings
+
+- **A verdict is now computed from every mismatch counter it prints.** The Object-Table page-reference
+  counter was read **nowhere but its own print statement**, so a flipped byte in a directory's root page
+  produced `Mismatched: 1` and, three lines later, "all N checksummed pages VERIFIED — no
+  tampering/corruption", `PASS`, **rc 0**. Findings now go through one collector that both the verdict
+  and the exit code read, and a gate (`check_finding_reachability.py`) asserts no counter is print-only
+  — it immediately found a fourth instance, the MLog page-verification count.
+- **An object's root page is verified on the listing and content paths**, not only its children.
+  `--verify-pages` covered pages reached inside the walk; the root page comes from the Object Table and
+  had no check. A flipped byte there now names the object and exits `2`, at a cost of 10 s → 47 s on a
+  64 GB volume and **0 false alarms** on five clean volumes across 4K, 64K and 4Kn.
+- **A damaged primary superblock is a finding on every command.** It exited `2` from `summary` and `0`
+  from `files` and `integrity`, because the escalation read a hand-written list of registers.
+
+### The content path verifies what it reads
+
+- **`extract` and `export` now verify the metadata page a record came from.** The listing path checked
+  an object's root page against the Object Table's digest; the content path resolved records through its
+  own walk and never looked. On a volume with one byte flipped in a directory's root page, `files`
+  warned and exited 2 while `extract` of a file recorded on that page wrote the bytes with **rc 0 and no
+  note**. The check now runs wherever the walk can name its object — 27 call sites, one digest per object
+  per run — so the evidence path answers the way the listing path does. Measured: **0 changed rows across
+  121 undamaged images**, and a file on an intact page of a damaged volume still extracts silently at
+  rc 0.
+
+- **Deleted-content recovery refuses two kinds of invented bytes.** A carve whose extents lie entirely
+  under sparse holes produces **no file** instead of one filled with whatever those clusters happen to
+  hold; and an extent table is walked by each row's **declared length** rather than a fixed 24-byte
+  stride, so misaligned bytes are no longer read as extent rows. On one corpus volume the old behaviour
+  produced 111 files this way — 95 hole-sourced, 14 from a misaligned walk whose cluster counts summed to
+  exactly the file's allocation **by coincidence**, satisfying the cover guard. Recovery on that volume
+  goes 362 files → 263, with 12 files newly recovered and 19 corrected; none of the difference is a
+  genuine recovery lost.
+
+### Evidence that did not exist
+
+- **Alternate data streams that were never there are gone** — 44 fabricated stream names across 28
+  files. Live enumeration is now bounded by the node header's row count; the carve and slack paths keep
+  the unbounded scan, because a deletion *decrements* that header while the slots below still address
+  real rows. Carved content is unchanged.
+- **`summary`'s "Total file size" no longer counts each hard-link name.** 25.3 GB → 14.7 GB on a
+  Windows volume with a large WinSxS store; unchanged where there are no hard links.
+- **A hole report names the stream it belongs to**, with the exact byte ranges, instead of naming the
+  host file and explaining the gap with "shares blocks with other streams" — which was false on the
+  volume it was printed for (0 of 1,235 runs overlap).
+- **The metadata bundle's manifest declares split-record inline streams**, which it had been omitting:
+  159 streams / 8,866 B becomes 326 / 17,040.
+- **`timestomp --csv` gains `evidence_ref`**, naming the corroborating USN record or hard-link sibling
+  behind every HIGH. The corroboration is now keyed by file identity rather than by name, which removes
+  a large class of false positives: on one Windows volume HIGH falls 1,714 → 324, because the record
+  that had been corroborating a live file by name belonged to a since-deleted namesake.
+- **`refsanalysis` reads bytes-per-sector from the VBR**, so a 4Kn volume reports 3.9 GB, not 504.0 MB.
+  It now *imports* the helper `forefst.py` already had, rather than carrying a second copy of the rule.
+
+### Damage that used to read as health
+
+- **A destroyed primary superblock no longer makes a readable volume unreadable.** ReFS keeps three
+  copies; the tool now falls back to a verified backup and says the primary is gone.
+- **A corrupted newest checkpoint is no longer used silently.** Selection follows the driver's own clock
+  (`+0x60`) and verifies the page's self-checksum; when that means reading an older checkpoint, the run
+  says so — **the view is stale** — instead of producing it quietly.
+- **An uncleanly dismounted volume is now distinguishable from a recovered one.** On a clean dismount the
+  checkpoint is written last, so the highest per-object log position equals the checkpoint's own; a
+  volume torn away mid-work carries objects past it. Measured across 117 images, exactly one is ahead —
+  the one that was.
+- **`export metadata` no longer stamps "current" on the superseded checkpoint.** The role was assigned by
+  the artefact's position in the superblock's list; ReFS alternates between two checkpoint copies, so that
+  position is the stale one about half the time — on 58 of 117 corpus volumes. The label now follows the
+  driver's selection clock (`+0x60`) and prints the clock beside it, so the choice can be checked rather
+  than trusted. Where the old rule was already right, the verdict is unchanged.
+- **A hand-edited boot sector is no longer echoed back as fact.** `Volume state` was built from the boot
+  sector alone; an image declaring `v6.66` reported `NATIVE v6.66`. It is now corroborated against the
+  checkpoint and `$VOLUME_INFORMATION`.
+- **An allocator clock ahead of the checkpoint clock is a finding**, not two numbers printed two lines
+  apart under "17/17 checks passed".
+- **A journal whose tail was destroyed is detected.** Nothing inside `$J` can distinguish a wipe from
+  unwritten ring space — but every file records the journal offset of its own last record, and those
+  pointers survive the wipe. `timestomp` no longer calls such a journal an "authoritative cross-check".
+- **`integrity --checksums` now verifies file data**, not only metadata pages: ReFS integrity streams are
+  the volume's own mechanism for detecting tampering with content.
+- **An empty listing caused by unreadable metadata says `LISTING FAILED`**, not `Wrote 0 entries`.
+
+### Detection that was losing true positives
+
+**`timestomp` correlated by filename.** A backdate followed by a rename put the evidence under the old
+name, and two live namesakes blocked corroboration entirely — both dropped from HIGH to INFO. Every
+negative case passed, so this was missed detection, not over-flagging. Correlation is now keyed on the
+file's identity, which survives renames and separates namesakes. On one ordinary volume this recovers
+**nine** true positives that were previously invisible; HIGH counts are unchanged on every other image.
+
+### The hole contract, kept everywhere
+
+Hole coverage has three states — present, none, and *this host cannot say* — and the third was reported
+as the second on every path except `extract`'s main loop. A stream whose coverage was unknown was written
+under `--refuse-holes` and its sidecar said `none`. `holes.json` now carries `undeterminable`, and
+`export metadata` accepts `--refuse-holes` (it previously rejected it as an unknown option while writing
+content assembled from the volume).
+
+### Reference corrections
+
+- **E104** — the Object-Table field at `value+0x18` is a per-object **log sequence number**, not a
+  "generation counter = checkpoint virtual clock". Proven by a controlled three-image experiment with an
+  untouched control, and confirmed on 15/15 volumes where the maximum equals the checkpoint's own LSN.
+- **E105** — the superblock **does** carry a self-checksum, in its descriptor at `+0xD0`. The register
+  said it did not, on the strength of a different offset being zero.
+- **E106** — a container-table claim was refuted against the wrong origin: row-relative, `+0xA0` is the
+  container start on every 160-byte row measured.
+- **E107** — enabling integrity does **not** convert a resident stream; a file *born* under integrity is
+  extent-backed from the start. The two questions had been merged.
+
+### Also
+
+`refsanalysis chkp --verify` verifies the checkpoint page's own checksum, and a run with a failing check
+no longer ends "N/M checks passed". `--margin-days` refuses a negative or fractional value instead of
+accepting it or leaking a Python error. Bundles record when an export failed rather than looking
+complete, and `verify-bundle` runs its rehydrate check even when something else already failed — and
+requires the rehydrated volume to contain something.
+
+## v1.12.3 — 2026-09-13 — a retracted claim removed from the tool and every page
 
 **Everything here is relative to v1.12.2.** One correction, and the check that keeps it corrected. No
 change to how a volume is parsed; no file's data, timestamps or listing move.

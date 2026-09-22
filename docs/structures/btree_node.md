@@ -29,7 +29,7 @@ describes *one page* of it. They overlap in offsets and disagree in meaning:
 | Offset | `_SmsIndexRoot` descriptor (page+0x50, root pages only) | the node header at `thoff` |
 |--------|--------------------------------------------------------|-----------------------------|
 | +0x00 | offset from here to the node header — this is what locates `thoff` | — |
-| +0x04 | descriptor size, `0x28` | — |
+| +0x04 | descriptor size, `0x28` — **a `u16`, not a `u32`** | The low half is `0x0028` on **1,432 of 1,432** root pages; the upper half is a separate field that tracks the table — `0xE010` on allocator pages, `0x0001` on the directory schemas `0x0130/0x0140/0x0150/0x0160`, `0x0000` on every `0xEnnn` system table. Reading the whole `u32` as the size is wrong on **1,042 of 1,432** pages |
 | +0x0C | **the table's schema id** (`0xe0c0` Container Table, `0xe030` Object Table, `0x130` directory …) | node level: 0 = leaf |
 | +0x14 | 2 | rows on **this page** |
 | +0x18 | **leaf-page / extent count for the whole table** | a u64, 0 on disk |
@@ -74,11 +74,18 @@ The header is reached at `page + 0x50 + u32@(page + 0x50)`, and the fields a rea
 Each key-index entry is **4 bytes**: a `u16` offset to the row (relative to the header) followed by a
 `u16` **marker**.
 
-That marker is not a count of anything — across the corpus it takes exactly two values, `0xFFFF` on 842,529
-entries and `0` on 879, and nothing else. `0` appears **only on an index page, once per page, on the last
-entry**, and always on a row with an **empty key** whose value is a page reference: the tree's **rightmost
-child**, the one covering keys above every separator key. Every other entry, and every entry on a leaf page,
-carries `0xFFFF`.
+That marker is not a count of anything, and it is **not two-valued**. Censused over every MSB+ page on the
+25 baseline images that satisfies the page's own key-index invariant — **15,169 pages, 689,639 entries** —
+it takes **38 distinct values**: `0xFFFF` on 685,755, `0` on 963, and **2,921 entries at 36 other values**
+(`0x1` ×1085, `0x4001` ×515, `0x8001` ×285, `0x401` ×201, `0x801` ×179, `0xc01` ×154, and a long tail
+including `0x3fdd`, `0x7fdd`, `0xcdc5`). One image, `win11refstestmftecmd`, carries 51 distinct values on
+its own.
+
+`0` is **not confined to index pages** either: **67 zeros sit on level-0 (leaf) pages**, **44 zeros are not
+the last entry** of their page, and **3 pages carry more than one zero**. The common case — a single `0` on
+the last entry of an index page, on a row with an empty key whose value is a page reference (the tree's
+**rightmost child**) — is real and is what most zeros are, but it is a tendency, not a rule, and a reader
+must not use `marker == 0` as a test for "rightmost child of an index page".
 
 It is also a version marker. Volumes from **3.10** onward write the `0` there; **3.4 through 3.9** leave
 `0xFFFF` on that same entry (216 pages, no exception). An **upgraded** volume keeps the old form on the pages

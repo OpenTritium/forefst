@@ -118,9 +118,10 @@ treats either of {7,8} as a valid Container-Table root.
 
 Roots **7, 8, and 12** are the bootstrap exception: they store **real, physical LCNs** that are read
 directly, with no translation. Every other root stores a virtual LCN and is unreadable until the
-Container Table from roots 7/8 is loaded. (Whether the 13 references are stored inline at CHKP+0x94 or
-at an in-page offset to a root-list region within the same checkpoint page depends on a CHKP flag — the indirect mode appears from
-v3.14.)
+Container Table from roots 7/8 is loaded. (`CHKP+0x94` holds **13 `u32` in-page offsets** in every mode —
+never the references inline — and the CHKP flag 0x0200 changes where those offsets point, not whether
+they are offsets. Measured: 36 of 36 direct-mode copies on 17 images resolve as offsets, 0 of 36 as
+inline references.)
 
 ## Step 5 — Container Table: the VLCN→PLCN map
 

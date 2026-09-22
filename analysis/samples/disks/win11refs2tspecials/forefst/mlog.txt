@@ -33,11 +33,9 @@ Data Area Summary
 ==============================================================================
 Redo Records
 ==============================================================================
-  Total records:      7223
-  Transaction starts: 2666
-  Transaction commits: 0  (commit is marked at the checkpoint/LogCore layer, not by a
-                          per-redo-record flag — this is 0 on every volume, healthy or not;
-                          do NOT read starts>commits as 'uncommitted work')
+  Total records:      45256
+  Transaction starts: 24107
+  Transaction commits: 24107
 
   The MLog is the volume's DURABLE TRANSACTION LOG. Operations logged here may not yet be
   checkpointed into the committed on-disk tree, so `files`/`summary` (which read the committed
@@ -64,28 +62,32 @@ Opcode Frequency
 
   Opcode   Count      %  Name                                    
   ──────  ──────  ─────  ────────────────────────────────────────
-  0x0000     408    5.6  OpenTableFromTablePath
-  0x0001    3240   44.9  RedoInsertRow
-  0x0002     764   10.6  RedoDeleteRow
-  0x0003      21    0.3  RedoUpdateRow
-  0x0004       3    0.0  RedoUpdateDataWithRoot
-  0x0005     104    1.4  RedoReparentTable
-  0x0006     368    5.1  RedoAllocate
-  0x0007     569    7.9  RedoFree
-  0x0008      58    0.8  RedoSetRangeState
-  0x000e      24    0.3  RedoSetParentId
-  0x000f      58    0.8  RedoDeleteTable
-  0x0010     802   11.1  CmsBPlusTable::SetObjectRecordPayload
-  0x0012      40    0.6  RedoMoveContainer
-  0x001f     494    6.8  RedoUpdateStreamSummary
-  0x0020     270    3.7  CmsStream::UpdateStreamUserPayload
+  0x0000     993    2.2  OpenTableFromTablePath
+  0x0001    8903   19.7  RedoInsertRow
+  0x0002    3844    8.5  RedoDeleteRow
+  0x0003    6156   13.6  RedoUpdateRow
+  0x0004   11057   24.4  RedoUpdateDataWithRoot
+  0x0005     347    0.8  RedoReparentTable
+  0x0006    3354    7.4  RedoAllocate
+  0x0007    1143    2.5  RedoFree
+  0x0008    1617    3.6  RedoSetRangeState
+  0x000a     102    0.2  RedoDuplicateExtents
+  0x000d     134    0.3  CmsBPlusTable::SetIntegrityInformation
+  0x000e     356    0.8  RedoSetParentId
+  0x000f     862    1.9  RedoDeleteTable
+  0x0010    1637    3.6  CmsBPlusTable::SetObjectRecordPayload
+  0x0012      69    0.2  RedoMoveContainer
+  0x001f    3877    8.6  RedoUpdateStreamSummary
+  0x0020     805    1.8  CmsStream::UpdateStreamUserPayload
 
   Category               Count      %
   ────────────────────  ──────  ─────
-  btree                   4830   66.9
-  alloc                    995   13.8
-  stream                   764   10.6
-  table                    570    7.9
-  container                 40    0.6
-  namespace                 24    0.3
+  btree                  31597   69.8
+  alloc                   6114   13.5
+  stream                  4682   10.3
+  table                   2202    4.9
+  namespace                356    0.8
+  integrity                134    0.3
+  dedup                    102    0.2
+  container                 69    0.2
 

@@ -70,8 +70,9 @@ the wrong reading produces confident-looking false findings. A few are worth sta
 - **For a single-named file, the NTFS `$SI`-vs-`$FILE_NAME` timestomp cross-check has no ReFS equivalent** — ReFS
   stores no `$FILE_NAME` and no short name. But a **hard-linked** file *does* have a ReFS-only analogue: each name is
   a separate type-0x30 row with its own MACB, and those rows *can* diverge (`FN_LINK_003`; the
-  `HARDLINK_MACB_MISMATCH` signal). Divergence is evidence; agreement is not — a `SetFileTime` through one
-  name updates every name at once. For single-named files,
+  `HARDLINK_MACB_MISMATCH` signal). Divergence is evidence; agreement clears nothing — the file's own
+  record takes the new time for every name at once, and each name's row is a cache refreshed only when
+  that name is opened, so any read of a sibling erases the difference. For single-named files,
   [timestomp detection](timestomp_detection.md) instead compares the parent's type-0x30 inline timestamps
   against the child's type-0x10 $SI and cross-checks the USN `BASIC_INFO_CHANGE` reason code. Looking for a
   `$FILE_NAME` that does not exist is the classic ReFS mis-read.

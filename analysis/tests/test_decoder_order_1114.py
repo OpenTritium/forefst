@@ -23,7 +23,7 @@ import pytest
 
 import forefst as F
 
-REPO = os.path.dirname(os.path.dirname(os.path.dirname(os.path.abspath(__file__))))
+from _repo import REPO                                   # layout-independent; see _repo.py
 DESCRIPTOR_CONSTANT = 0x000E0080          # 917632 -- a $DATA sub-record descriptor, never a cluster address
 
 

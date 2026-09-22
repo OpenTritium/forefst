@@ -20,7 +20,7 @@ import sys
 import pytest
 
 # tests/ lives at analysis/tests/, so the repo root is THREE levels up (tests -> analysis -> repo).
-REPO = os.path.dirname(os.path.dirname(os.path.dirname(os.path.abspath(__file__))))
+from _repo import REPO                                   # layout-independent; see _repo.py
 FOREFST = os.path.join(REPO, "forefst.py")
 
 EXIT_OK = 0            # success / no finding

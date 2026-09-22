@@ -121,11 +121,12 @@ differ, that is evidence worth following: nothing routine produces it, and it is
 
 **Read the result carefully in both directions.** A lab measurement built a two-name file and
 called `SetFileTime` on one path: afterwards both name rows were byte-identical across their
-whole 84-byte value. So the ordinary tool updates *every* name at once, which means **names
-that agree tell you nothing** — that is what a stomp leaves behind and also what an untouched
-file looks like. And because the mechanism that makes the copies diverge was never decompiled,
-*which* name holds the true birth is not established: treat a mismatch as a lead, not a
-verdict.
+whole 84-byte value. The file's own record takes the new time for every name at once; each name's
+row is a cache of it that the driver refreshes only when *that* name is opened. So **names that agree
+tell you nothing** — agreement is what a stomp leaves behind once every name has been read, and also
+what an untouched file looks like. And the stale name is the one nobody opened, which is not the same
+as the one nobody forged: *which* name holds the true birth is not established. Treat a mismatch as a
+lead, not a verdict — and one that the next read destroys.
 
 ### Step 3 — Confirm the two files resolve to different content records
 

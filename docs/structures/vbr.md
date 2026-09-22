@@ -14,9 +14,9 @@ backup copy resides in the last sector of the volume.
 | 0x10 | 4 | FSRS identifier | ASCII `"FSRS"` signature (`0x46535253`) |
 | 0x14 | 2 | VBR size (u16) | Always `0x0200` (512) |
 | 0x16 | 2 | VBR checksum (u16) | ROR-1 + ADD over bytes 3..511, excluding offsets 0x16-0x17 |
-| 0x18 | 8 | Total sector count (u64) | Volume size in units of the sector size in the field above (512 on every corpus image) |
-| 0x20 | 4 | Bytes per sector (u32) | 512 on every corpus image; ReFS also supports 4Kn media, which this project has not tested. The reader now looks for the GPT at byte 512 **and**, failing that, at 4096, so a 4Kn image is read rather than rejected — but that path is exercised only by synthetic test images, never by a real 4Kn volume. Treat a result obtained from one as unverified |
-| 0x24 | 4 | Sectors per cluster (u32) | 8 (4 KiB clusters) or 128 (64 KiB clusters) |
+| 0x18 | 8 | Total sector count (u64) | Volume size in units of the sector size in the field above — **512 on a 512e volume, 4096 on a 4Kn one**. Multiply by `0x20`, never by a constant |
+| 0x20 | 4 | Bytes per sector (u32) | **512** on a 512e volume and **4096** on a 4Kn one. Both are represented in the measured set: `lab314_4kn` and `lab314_4kn_step2` are real 4Kn volumes (VBR declares 4096; 626 of 626 files verified against the operator's own SHA-256 inventory), alongside 512e volumes across every other format. The reader looks for the GPT at byte 512 **and**, failing that, at 4096 |
+| 0x24 | 4 | Sectors per cluster (u32) | **1, 8 or 128** — measured `lab314_4kn` 4096 x 1 = 4 KiB, `lab314_main` 512 x 8 = 4 KiB, `lab314_64k` 512 x 128 = 64 KiB. The cluster size is the **product** of `0x20` and `0x24`, so the same 4 KiB cluster is reached by two different sector counts |
 | 0x28 | 1 | Major version (u8) | 3 on all covered volumes |
 | 0x29 | 1 | Minor version (u8) | 4–14 -- see Version values below |
 | 0x2A | 2 | Checksum algorithm selector (u16) | See Checksum algorithm selector below |
@@ -72,13 +72,39 @@ upgraded volume still reads `0x0000` here while its checkpoint has moved to the 
 |-----|------|---------|---------------|
 | 1 | 0x02 | Mount marker | v3.4 |
 | 2 | 0x04 | Always set | v3.4 |
-| 5 | 0x20 | Win11 format | v3.7 |
+| 5 | 0x20 | Win11 format — **and the hard-link capability gate** (see below) | v3.7 |
 | 6 | 0x40 | Native v3.10+ format (gates checksum) | v3.10 |
 
 Observed composite values:
 - `0x06` -- v3.4
 - `0x26` -- v3.7 / v3.9
 - `0x66` -- v3.10+
+
+### Bit 0x20 is what the driver tests for hard-link support
+
+`RefsHardlinksSupported` (win11 refs.sys 10.0.26100.8115, `14008f034`) is a single comparison:
+
+```c
+return *(short *)(VCB + 0x2acc) == 0x39;
+```
+
+and that VCB field is built from this flag, at `487472` of the same build:
+
+```c
+*(ushort *)(VCB + 0x2acc) = (ushort)(*(uint *)(VBR + 0x2c) >> 5) & 1 | 0x38;
+```
+
+`0x38` with bit 5 of the volume flags shifted in, so the field is `0x39` exactly when **bit 0x20 is
+set** and `0x38` when it is clear. The equality test *is* the bit test, one indirection away — other
+call sites compare against `0x38` for the bit-clear behaviour.
+
+**On disk:** across the corpus, the flag and the presence of hard links agree on **83 of 83** volumes
+whose VBR is intact — 51 with the bit set do have hard links, 32 with the bit set have none (the bit
+says *supported*, not *used*), and 11 with the bit clear have none. The single volume with hard links
+and the bit clear is `win11refs2tmillionsofactions_aftersalvage_fixboottest.raw`, and it names its own
+cause: `refsutil fixboot` rewrote its VBR, leaving `volume_flags = 0x04` with **serial = 0 and container
+size = 0** — the fixboot signature — while the hard links created before it remain in the metadata. Its
+pre-fixboot sibling carries `0x66` with the bit set.
 
 ## VBR field classification
 

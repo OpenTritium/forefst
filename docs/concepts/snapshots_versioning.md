@@ -212,4 +212,31 @@ Findings: MD_SNAP_RA_002, MD_SNAP_RA_003, CT_DRNT_RA_001, GN_SNAP_SA_001, MD_SNA
 [how this was verified](../methodology.md) to trace these to the exact images and measurements in
 `analysis/`.
 
+## Deleting a snapshot: implemented in the driver, refused at the interface
+
+The driver can delete a stream snapshot. Windows will not let you ask it to.
+
+`RefsStreamSnapshotManagement` (**refs.sys 10.0.26100.8115, `1400c3cfc`**) is the FSCTL entry point, and
+it dispatches on the request's operation code:
+
+| op | outcome |
+|---:|---|
+| 1 | `RefsCreateStreamSnapshot` |
+| 2 | `RefsListStreamSnapshots` |
+| 3 | `RefsQueryDeltasStreamSnapshot` |
+| **4, 5, 6** | **`0xC0000002` — `STATUS_NOT_IMPLEMENTED`** |
+
+All three of the remaining operations take the same branch and return the same status; the function does
+not attempt the work and then fail, it declines to start.
+
+The capability itself is not missing. `MsDeleteStreamSnapshot` (**same build, `1400ecec8`**) is a fully
+written function — it calls `CmsTableSetBase::PrepareEntryForMerge` and carries out the merge — so the
+delete path exists one layer below the interface that refuses to reach it.
+
+**Why this matters for an examiner.** A snapshot on a mounted ReFS volume cannot be removed through the
+documented interface, which is a large part of why the prior versions this page describes are still
+present to recover. It is a property of the shipped driver, not of any particular volume, and it is a
+statement about *this* build: an interface that declines an operation today can expose it tomorrow, and
+the check is one dispatch table away.
+
 Also registered for statements on this page: **MD_SNAP_RA_001**.

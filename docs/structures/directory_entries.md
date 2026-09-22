@@ -61,7 +61,9 @@ both layouts, so testing the length as a **range** is both correct and version-i
 
 | Offset | Size | Field | Description |
 |--------|------|-------|-------------|
-| 0x00 | 40 | Structural metadata | Stream index (8B) + internal B+-tree management fields (32B) |
+| 0x00 | 4 | Record-node offset (u32) | `0xA8` on **2,701 of 2,701** embedded records and **608 of 608** type-0x10 own rows measured — the offset at which the record's embedded node begins |
+| 0x04 | 4 | Node descriptor (u32) | `0x00010028` on every record measured. The low half is the descriptor size `0x28`; the upper half is not padding and varies with the table |
+| 0x08 | 32 | Structural metadata | Stream index (8 B) + internal B+-tree management fields (24 B) |
 | 0x28 | 8 | Creation time | FILETIME (100 ns since 1601-01-01) |
 | 0x30 | 8 | Modification time | FILETIME |
 | 0x38 | 8 | Metadata change time | FILETIME |
@@ -69,7 +71,7 @@ both layouts, so testing the length as a **range** is both correct and version-i
 | 0x48 | 4 | File attributes (u32) | Win32 flags + ReFS extensions |
 | 0x4C | 4 | Internal flags (u32) | ReFS-specific state |
 | 0x50 | 8 | Security ID (u64) | Links to Security Descriptors table (OID 0x530) |
-| 0x58 | 8 | File size (u64) | Logical file/stream size (= $DATA size). Equals the $DATA sub-record size on every measured v3.14 file, and is nonzero even on USN-inactive images — decisively FileSize. |
+| 0x58 | 8 | File size (u64) | Logical file/stream size, and nonzero even on USN-inactive images. It is a **cached copy** of the `$DATA` size, not the `$DATA` record itself: it agrees on **329,117 of 329,120** embedded rows over 141 images, and the 3 exceptions are all **stale-low on an actively-appended file** (`winsider` `StorGroupPolicy.log` 10,792 vs 12,029; a System32 file 730 vs 876; `winsiderv2` `wpndatabase.db-wal` 3,230,112 vs 3,275,432). Where the two disagree the `$DATA` record is authoritative. |
 | 0x60 | 8 | Allocated size (u64) | Allocation ≥ file size (roundup-to-cluster on most; inline byte count for tiny files). |
 | 0x68 | 8 | LastUsn (u64) | File's last USN = virtual byte offset of its most recent `$UsnJrnl:$J` record (OID 0x520). 0 if the journal is inactive. This (offset 0x68) is the per-file USN. |
 | 0x70 | 8 | UsnJournalId (u64) | Journal epoch ID (one per volume); 0 if journal inactive. |
@@ -123,8 +125,10 @@ descends into the child here, and so must any tool that wants a complete answer.
 
 | Marker | Meaning |
 |--------|---------|
-| 0x80000001 | Single-instance attribute (reparse 0xC0, EA info 0xD0, EA 0xE0) |
-| 0x80000002 | Multi-instance attribute ($DATA 0x80, $SNAPSHOT 0xB0) |
+| 0x80000001 | Single-instance attribute — reparse `0xC0`, EA info `0xD0`, EA `0xE0`, and **`$DATA` 0x80 in its inline-content form** (429 rows measured; this is the combination [DATA.md](../attributes/DATA.md) tells you to look for) |
+| 0x80000002 | Multi-instance attribute — `$DATA` `0x80`, `$SNAPSHOT` `0xB0`, **`$OBJ_LINK` `0x39`** (498 rows), **`$I30_INDEX` `0x90`** (499 rows) and **`$EFS` `0x100`** |
+
+The marker does **not** partition the type codes: `0x80` appears under both, and the pairs above were counted over four images. Read the marker and the type together; neither alone identifies the sub-record.
 
 Sub-records begin at offset 0xA8+ and form a chain. Single-instance sub-records carry one attribute each; multi-instance sub-records may appear multiple times for streams with the same descriptor.
 
@@ -136,7 +140,7 @@ Both alternate data streams (ADS) and snapshot streams are stored as multi-insta
 |--------|------|-------|-------------|
 | 0x00 | 4 | Marker (u32) | 0x80000002 (multi-instance) |
 | 0x04 | 4 | Descriptor (u32) | 0x000500B0 |
-| 0x08 | var | Stream name | UTF-16LE null-terminated |
+| 0x08 | var | Stream name | UTF-16LE, **not NUL-terminated** — its length comes from the key length. Measured: 0 of 254 type-0xB0 stream names and 0 of 3,830 reverse-index names carry a terminator. Worked case (`win11refs2g`, 38-byte key): `6a00…` value_length, marker `0x80000002`, type `0xB0` subtype `0x0005`, then 22 bytes of name ending `34 00` with no NUL |
 | -- | 0-6 | Alignment padding | Pad to (offset - marker_start) % 8 == 4 |
 
 **Sub-record header** (immediately after alignment):
@@ -164,7 +168,7 @@ Extent tables for extent-backed content are stored in multi-instance sub-records
 |--------|------|-------|-------------|
 | 0x00 | 4 | Marker (u32) | 0x80000002 |
 | 0x04 | 4 | Descriptor (u32) | 0x000E0080 |
-| 0x08 | 8 | Stream index (u64) | Matches ADS header+0x44 or default stream 0x0008 |
+| 0x08 | 8 | Sub-stream id (u64) | The id in the multi-instance `$DATA` sub-record's **key** at `key+0x10`. Id `0x8` is the stream-set metadata record, not the default data stream: all **1,448** records carrying it are a fixed 40-byte value with **no extent node, stream size 0 and disk-allocated 0**, so it can hold no content |
 | 0x10 | var | Extent table | See [Extent Descriptors](extent_descriptors.md) |
 
 ## Index-entry value (key_flags = 0x02) — 84 bytes, or 72 from a pre-v3.10 driver

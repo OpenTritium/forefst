@@ -164,8 +164,8 @@ sets NTFS keeps per inode. For a single-named file there is no `$FILE_NAME` twin
 classic $SI-vs-$FN cross-check does not apply (step 7 replaces it). A **hard-linked** file, however, holds
 one independent timestamp copy per name, and those copies **can** diverge — where NTFS's hard links share
 a single `$SI` and cannot. Divergence between a file's names is evidence worth following; **agreement is
-not**, because calling `SetFileTime` through one name was measured to update every name at once (see
-step 7 and [Hard Links](hard_links.md)). A
+not**, because the file's own record takes the new time for every name at once and each name's row is
+only a cache of it, refreshed when that name is opened (see step 7 and [Hard Links](hard_links.md)). A
 super-timeline merges three independent event sources: per-name **$SI MACB**, the
 **[USN change journal](../structures/usn_journal.md)** (the `$J` stream, under OID 0x520), and **MLog**
 durable-log transactions. USN and $SI carry exact FILETIMEs and join by OID; MLog times are embedded
@@ -302,8 +302,9 @@ on the raw-disk corpus (RD). Specifically:
   one `$SI`. **It is not a reliable timestomp cross-check.** A later lab measurement (**MD_TS_RA_008**)
   found that a `SetFileTime` through one name updates **both** index entries — the two rows were
   byte-identical on disk across the whole 84-byte value — so a backdate applied through either name leaves
-  no divergence to find. Divergence *has* been observed on disk, but the mechanism that produces it was
-  never decompiled and is not known to be `SetFileTime`. Treat sibling agreement as proving nothing.
+  no divergence to find once both names have been opened. Divergence *has* been observed on disk, and it
+  lives in the per-name cache: the driver refreshes only the opened name's row, so an un-opened sibling
+  keeps its pre-stomp times until something reads it. Treat sibling agreement as proving nothing.
 
 Also registered for statements on this page: **FS_SUPB_RA_005**. See [how this was verified](../methodology.md) to trace these to the exact images and measurements in
 `analysis/`.

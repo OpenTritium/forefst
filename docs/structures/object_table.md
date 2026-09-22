@@ -17,10 +17,19 @@ The on-disk B+-tree leaf-row key is **16 bytes** (the key type is `SmsBigIdentif
 
 | Offset | Size | Field | Description |
 |--------|------|-------|-------------|
-| 0x00 | 8 | Schema reference (u64) | Value 0x2 for standard objects |
-| 0x08 | 16 | Record header | format=2, key_offset=0x18, value_offset=0x30 |
-| 0x18 | 4 | Generation counter (u32) | Checkpoint virtual clock at creation/last modification |
-| 0x1C | 4 | Dirty generation (u32) | Modification epoch (small integer 1-6) |
+| 0x00 | 4 | Record format (u32) | `2` on **89,231 of 89,231** rows over 113 volumes. Reading this as a `u64` happens to give 2 only because `u32@+0x04` is 0 on every row, which hides the error |
+| 0x04 | 4 | Reserved (u32) | 0 on 89,231/89,231 |
+| 0x08 | 4 | Key offset (u32) | `0x18` on 89,231/89,231 |
+| 0x0C | 4 | Value offset (u32) | `0x30` on 89,231/89,231 |
+| 0x10 | 4 | Payload offset (u32) | 80, 200 or 104 — the field `GetObjectRecordPayload` reads |
+| 0x14 | 4 | Trailer length (u32) | 8 or 0 |
+
+There is no 16-byte "record header" at `+0x08`: the format word is at `+0x00`, and `+0x10`/`+0x14` are
+the payload offset and trailer length. The `(value_length, payload_offset, trailer)` triples take exactly
+six values across the corpus — (88, 80, 8) ×86,707, (80, 80, 0) ×1,052, (248, 200, 8) ×1,044,
+(112, 104, 8) ×204, (240, 200, 0) ×179, (104, 104, 0) ×45.
+| 0x18 | 4 | **Log sequence number — offset (u32)** | Low half of a 64-bit LSN: the offset within the log segment at which this object was last modified |
+| 0x1C | 4 | **Log sequence number — segment (u32)** | High half of the same LSN: the log segment number, which is why the values are small and advance by one per segment. Read together, `u64 @0x18` is the object's last-write position in **log time**, in the same address space as the checkpoint LSN at [CHKP](chkp.md)+0x70 |
 | 0x20 | 32 | 4 x u64 LCN slots | Page references for object's own B+-tree root (see [Container Table](container_table.md) for the virtual-to-physical LCN translation) |
 | 0x40 | 8 | **Checksum descriptor** | The tail of the page reference: flags (u16), **checksum type at +0x42** (1 = CRC32-C, 2 = CRC64, 4 = SHA-256), digest offset at +0x43, digest length at +0x44. Observed `00 00 02 08 08 00 00 00` on a CRC64 volume — type 2, offset 8, length 8 |
 | 0x48 | 8 (32 for SHA-256) | **Digest of the object's root page** | Not an identifier. Recomputing the checksum over the page the LCN slots point at reproduces this value exactly — **34,108 of 34,108 rows** across the corpus (CRC64 and SHA-256 volumes, ReFS 3.4 → Insider). The only 20 mismatches are on one known-damaged volume family, which is what a checksum is for |
@@ -93,10 +102,14 @@ The Object Table has a failover pair: root #0 (table ID 0x02) and root #5 (table
 
 ## Evidence
 
-The key/value layout, the compact-versus-legacy formats, and the failover pair are decompiled from the driver (E2) and decoded on raw disk across the corpus (RD). The record-header decode (`format=2`, key/value offsets, generation and dirty-generation counters) and the four-slot LCN tuple are read by `CmsObjectTable::GetObjectRecordOfIdentifier` / `MsGetObjectRecordPayload`. The OID-allocation behaviour (monotonic, never-reused, 0x701 user floor, 0x600 root exception) is proven both statically — `CmsObjectTable::GenerateIdentifier` (atomic increment), `DeleteIdentifier` (never decrements), `MsSetMinimumNewObjectId`, `RefsIsSystemObjectId` — and on disk via the observed no-reuse / gaps-equal-deletions behaviour. > **Where this is checked.** `forefst.py <image> integrity --fullchecksums` crosses the Object Table's leaf
+The key/value layout, the compact-versus-legacy formats, and the failover pair are decompiled from the driver (E2) and decoded on raw disk across the corpus (RD). The record-header decode (`format=2`, key/value offsets, the two LSN halves) and the four-slot LCN tuple are read by `CmsObjectTable::GetObjectRecordOfIdentifier` / `MsGetObjectRecordPayload`. The OID-allocation behaviour (monotonic, never-reused, 0x701 user floor, 0x600 root exception) is proven both statically — `CmsObjectTable::GenerateIdentifier` (atomic increment), `DeleteIdentifier` (never decrements), `MsSetMinimumNewObjectId`, `RefsIsSystemObjectId` — and on disk via the observed no-reuse / gaps-equal-deletions behaviour. > **Where this is checked.** `forefst.py <image> integrity --fullchecksums` crosses the Object Table's leaf
 > rows into every object B+-tree and verifies each page against the digest recorded here — so a stale or
 > corrupt object root **is** detected, by the command whose job that is. Ordinary commands do **not** verify
 > it: doing so would mean re-reading and re-checksumming every object's root page on every run, measured at
 > about 40 seconds on a volume with ~27,000 objects. If you need the assurance, run `integrity`.
 
-**0x20–0x50 is a complete [page reference](page_references.md)** — the same structure used everywhere else — of which 0x40 is the checksum descriptor and 0x48 the digest of the object's root page. This is raw-disk confirmed rather than inferred: the digest recomputes over the referenced page on **34,108 of 34,108** rows corpus-wide (the 20 exceptions are all on one known-damaged volume family). It follows that a stale or corrupt object root is detectable at no cost, and that the compact 80-byte row (0x20 + 0x30) and the 104-byte SHA-256 row (0x20 + 0x48) are exactly a header plus one page reference. The remaining field-level statements on this page are registered as **FS_OTBL_001**, **FS_OTBL_002**, **FS_OTBL_RA_002**, **FS_OTBL_RA_007**, **FS_OTBL_SA_001**, **FS_OTBL_SA_003**, **FS_OTBL_SA_007**, **MD_ATTR_RA_005** — each with its own evidence tier and witness in the claim register. See [how this was verified](../methodology.md) to trace these to the exact images and measurements in `analysis/`.
+The LSN at `+0x18` is established on disk. In a controlled three-image experiment on one volume — create three directories, then modify a single file in the first, then a single file in the second, leaving the third untouched throughout — the field advanced for exactly the directory that changed and stayed frozen on the untouched control, **6 of 6 transitions as predicted**. Across **15 volumes** (4K and 64K clusters, ReFS 3.4 through 3.14, 2 GB to 2 TB, including a 4Kn volume) the **maximum** value of `u64 @0x18` equals the active checkpoint's own LSN at `CHKP+0x70` **exactly**, which is what follows from the object table being written last at checkpoint time.
+
+Forensically this is a per-object last-write clock kept by the driver in log time. It orders object modifications independently of the `$SI` timestamps a user can set, and it identifies every object modified after a given checkpoint.
+
+**0x20–0x50 is a complete [page reference](page_references.md)** — the same structure used everywhere else — of which 0x40 is the checksum descriptor and 0x48 the digest of the object's root page. This is raw-disk confirmed rather than inferred: the digest recomputes over the referenced page on **34,108 of 34,108** rows corpus-wide (the 20 exceptions are all on one known-damaged volume family). It follows that a stale or corrupt object root is detectable at no cost, and that the compact 80-byte row (0x20 + 0x30) and the 104-byte SHA-256 row (0x20 + 0x48) are exactly a header plus one page reference. The remaining field-level statements on this page are registered as **FS_OTBL_001**, **FS_OTBL_002**, **FS_OTBL_RA_002**, **FS_OTBL_RA_007**, **FS_OTBL_RA_009**, **FS_OTBL_SA_001**, **FS_OTBL_SA_003**, **FS_OTBL_SA_007**, **MD_ATTR_RA_005** — each with its own evidence tier and witness in the claim register. See [how this was verified](../methodology.md) to trace these to the exact images and measurements in `analysis/`.

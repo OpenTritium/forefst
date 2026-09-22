@@ -159,10 +159,11 @@ The habits that mislead an NTFS-trained analyst on ReFS, and where the correct m
   ([USN Journal](../structures/usn_journal.md)).
 - **Timestomping needs a different cross-check.** ReFS carries one `$SI` timestamp set *per name*, so a
   single-named file has no `$SI`-vs-`$FN` twin to compare — use the filesystem-controlled change-time plus
-  the USN anchor. A *hard-linked* file, though, keeps an independent timestamp copy per name, and a
-  those copies *can* diverge where NTFS's cannot. Divergence between a file's names is evidence; agreement
-  is not, because a `SetFileTime` through one name updates every name at once
-  ([Timestomping Detection](timestomp_detection.md)).
+  the USN anchor. A *hard-linked* file, though, keeps an independent timestamp copy per name, and those
+  copies *can* diverge where NTFS's cannot. The file's own record takes the new time for every name at
+  once; what diverges is each name's index entry, a cache the driver refreshes only for the name that was
+  opened. Divergence between a file's names is evidence; agreement clears nothing, and any read of a
+  sibling erases the difference ([Timestomping Detection](timestomp_detection.md)).
 - **The log has no undo.** MLog is redo-only — prior states come from dereferenced CoW pages, not a
   backward log scan ([Copy-on-Write](copy_on_write.md), [NTFS vs ReFS](ntfs_comparison.md)).
 

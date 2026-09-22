@@ -1,0 +1,18 @@
+# Claims this project has RETRACTED. A retired claim must not reappear in any live page or in the tools.
+#
+# Why a gate and not care: the hard-link claim below was reported corrected twice and was still on ELEVEN
+# live pages and inside forefst.py -- including printed output -- when a third review found it. No existing
+# check could see it: check_doc_drift compares sentences for NUMERIC disagreement (this claim has no
+# numbers) and check_doc_vocabulary is scoped to retired output tokens INSIDE FENCED CODE BLOCKS.
+#
+# Columns (tab-separated):
+#   id        short slug
+#   pattern   Python regex, matched case-insensitively against text with hard wraps joined
+#   unless    regex that, if found in the SAME sentence, means the text is stating the correction
+#   retired_by  the measurement that retracted it
+#   correct   one line: what to say instead
+id	pattern	unless	retired_by	correct
+hl-sibling-true-birth	\b(sibling|other name|another name)[^.]{0,60}\b(true|real|authentic)\s+birth	not\s+established|absence\s+means\s+nothing|agreement\s+is\s+not|cannot\s+support|does\s+not\s+clear|proves\s+nothing|tell\s+you\s+nothing	MD_TS_RA_008	A SetFileTime through one hard-link name updates EVERY name; divergence is evidence, agreement is not, and which name is authentic is not established.
+hl-latest-authentic	\b(latest|newest)\s+(created|sibling)[^.]{0,70}authentic	not\s+established|cannot\s+support|is\s+an\s+inference	MD_TS_RA_008	Do not name an authentic birth from the sibling set; the mechanism behind the observed divergence was never decompiled.
+hl-never-clean-sibling	never\s+(on\s+)?the\s+clean\s+sibling	not\s+established|absence\s+means\s+nothing	MD_TS_RA_008	The tool flags EVERY name of a diverging group; flagging only one would assert the others are clean.
+hl-stomp-causes-divergence	(?=.*name-scoped)(?=.*\bcaus)(?=.*(disagree|divergen|mismatch))	does\s+the\s+opposite|updates\s+every\s+name|not\s+that\s+call|cannot\s+be\s+the\s+cause	MD_TS_RA_008	A name-scoped SetFileTime updates EVERY name, so it cannot be the cause of a divergence; the mechanism is unknown.

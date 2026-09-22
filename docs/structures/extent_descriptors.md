@@ -34,7 +34,7 @@ begin `0x18` — that leading `0x18` is **24**, the size of a plain record, not 
 |-------|-------------|---------|
 | 0x0040 | 24 | Standard data-run extent (variable run_length) |
 | 0x0050 | 24 | Data-run with bit 0x10 set |
-| 0x0060 / 0x0064 | 24 | **Sparse hole** (bit 0x20 set): the entry has `VLCN == 0` and its run is a zero-filled hole — never read from disk (see below) |
+| 0x0060 / 0x0064 | 24 | **Sparse hole** — identified by **bit 0x20**. Its run is a zero-filled hole, never read from disk (see below) |
 | 0x00d0 | 24 + run*4 | **Per-cluster checksums present** (bit 0x80 set, over the 0x0050 run flags): each cluster of the run is followed by its CRC32-C (Castagnoli poly `0x82f63b78`) |
 
 Measured across **48,474 extent records on 40 volumes**: the record size is `24 + (bit 0x80 ? run*4 : 0)`
@@ -143,9 +143,24 @@ subtracting `4 × row_count` from a value at `+0x20` gives the same answer on a 
 why that reading went unnoticed — but it cannot tell a damaged header from a good one, and it treats `+0x20`
 as an 8-byte field when `+0x24` is a separate word. Verified on 480 extent nodes with 0 violations.
 
-Rows are addressed by that **trailing index** of 4-byte slots — a 2-byte row offset plus a 2-byte hint
-holding the row's file VCN. Use the file VCN inside the row itself, not the hint: the hint is only 16 bits and
-saturates on a file larger than 65,535 clusters.
+Rows are addressed by that **trailing index** of 4-byte slots — a 2-byte row offset plus a 2-byte word that
+is a **B+-tree upper-bound sentinel, not the row's file VCN**. Read the file VCN from inside the row. The
+advice is unchanged; the reason for it is: the word reads `0xFFFF` on **1,364 leaf rows whose own file VCN is
+below 0xFFFF** (against 433 where it happens to equal `fvcn & 0xFFFF`), so it is not a saturated VCN. Worked
+case: `win1121h2test` OID 0x701, sub_id 0x1000, count 1, key-index bytes `28 00 ff ff` — row offset 0x28,
+sentinel 0xFFFF, and that row's file VCN is 0 with run 1.
+
+Two further consequences for anyone walking these rows:
+
+* **The extent area is not `0x28 + 24 × count`.** `u32@ihdr+0x04` disagrees with that formula on **486 of
+  2,172** extent-node headers. On `win11refs2g_sha256checksums` OID 0x707 the header says count 2 and end
+  `0x70`, and the area holds **three** 24-byte slots (`0x28`, `0x40`, `0x58`) of which the key index lists
+  only two — the slot at `0x28` is **unindexed**.
+* **Rows are not a contiguous array in key-index order** on **961 of 1,865** multi-row nodes.
+
+An unindexed slot still holds a well-formed row. That matters for recovery: a deletion can drop a row from
+the index while the bytes remain, so a reader bounded strictly to the index will miss content that is still
+on disk, and a reader that ignores the index will list rows twice.
 
 When the map outgrows one node, the level byte becomes non-zero and each row's value is a **48-byte node
 reference** holding four cluster numbers. Those are *virtual* cluster numbers — translate them through the
@@ -246,12 +261,23 @@ The checksum appended to an integrity record is CRC32-C (Castagnoli, poly `0x82f
 cluster: confirmed in the driver (E2) — the `crc32c_4096` kernels via `ComputeOneChecksum` (which uses the
 4096-byte path only when the span is one cluster) — and on disk (RD), 886 checksummed clusters recomputed
 across three integrity volumes with 0 mismatches (a cross-algorithm control ruled out plain CRC-32 and CRC64).
-The sparse-hole entry (`VLCN == 0`, flags bit 0x20) is raw-disk verified: `VLCN 0 → PLCN 0` is the boot
-region on every volume, so a zero VLCN is a hole, zero-filled and never read (213 records across 18 images,
-v3.9–v3.14, 4K and 64K).
+The sparse-hole entry is identified by **flags bit 0x20**, and that bit alone: a hole's VLCN *mirrors its
+file VCN*, so it is usually non-zero (for example `file_vcn=1, VLCN=0x1, run=25343, flags=0x180060`).
+Measured across all six extent-decoding paths on four volumes — 8,864 accepted records — every record
+carrying `VLCN == 0` also carries bit 0x20, and records carry bit 0x20 without a zero VLCN, so the flag is
+the discriminator. A hole's run is zero-filled and never read from disk.
+
+`VLCN == 0` remains a read-time floor rather than a hole test: `VLCN 0 → PLCN 0` is the boot region on every
+volume, so cluster 0 is never a file's content. An entry with a zero VLCN and **no** 0x20 flag is a
+malformed record — it is rejected, so the surrounding map fails its cover check cleanly, rather than being
+served as a run of zeros.
+
+A **sparse file's** entries tile only its *allocated* clusters, at their logical positions, with no entry for
+the range between them. A file of 16 clusters with 2 allocated appears as one entry at file VCN 0 and one at
+file VCN 15; the uncovered range is the hole.
 
 Findings: **MD_DATA_RA_001** (24-byte extent entry), **MD_DATA_RA_007** (integrity-stride flags),
-**MD_DATA_RA_013** (inline CRC32-C element, poly 0x82f63b78), **MD_DATA_RA_014** (sparse VLCN==0 hole),
+**MD_DATA_RA_013** (inline CRC32-C element, poly 0x82f63b78), **MD_DATA_RA_014** (sparse hole, flags bit 0x20),
 **MD_DATA_RA_002** (single-extent shortcut retracted), **MD_DATA_RA_009** (MI $DATA sub-record),
 **MD_SNAP_RA_003** / **CT_DRNT_RA_001** (snapshot extents reuse the format), **MD_DATA_RA_011** (version-count
 field). The remaining field-level statements on this page are registered as **CT_DRNT_001**, **CT_DRNT_003**, **MD_DATA_RA_023**, **MD_DATA_RA_024** — each with its own evidence tier and witness in the claim register. The logical-versus-allocated signal is **MD_SF_RA_005**, and the `alloc_size = 0` case for a fully sparse file is **MD_SF_RA_004**. The extent-record key shape that identifies a non-inline stream's own extent sub-record — key offset `0x10`, key size `0x50` — is **MD_ADS_RA_002**. See [how this was verified](../methodology.md) to trace these to the exact images and measurements

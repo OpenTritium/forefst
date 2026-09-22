@@ -17,12 +17,12 @@ it does not silently refuse them.
 
 | Offset | Size | Field | Description |
 |--------|------|-------|-------------|
-| 0x00 | 4 | Record length (u32) | Total record size = `pad8(0x4C + UTF-16 name byte length)`; name-dominated, driver minimum 80 (0x50), observed 80–312 B across the corpus, no fixed ceiling — all records 8-byte aligned |
+| 0x00 | 4 | Record length (u32) | Total record size = `pad8(0x4C + UTF-16 name byte length)`; name-dominated, driver minimum 80 (0x50), observed **80–408 B** across the corpus, no fixed ceiling — all records 8-byte aligned. On `winsider` (217,892 records) the maximum is **408** and **1,779 records exceed 312 B** (320 B ×488, 328 ×379, 336 ×741, 344 ×119, 352 ×4, 360 ×4, 368 ×2, 384 ×38, 408 ×4); `winsiderv2` independently reaches 408 with 1,644 over 312. The long ones are legitimate WinSxS component names, so do not treat a record above 312 B as malformed |
 | 0x04 | 2 | Major version (u16) | 3 on every ReFS record (the 128-bit File ID requires the V3 layout). The parser decodes with V3 offsets and *tolerates* a stray V2/V4 — a non-ReFS/corrupt input — with a one-time note rather than refusing it (see above) |
 | 0x06 | 2 | Minor version (u16) | Always 0 |
 | 0x08 | 16 | File ID (u128) | See 128-bit File ID structure below |
-| 0x18 | 16 | Parent file ID (u128) | Same format, but this is the **current** parent directory's reference. Unlike the File ID at 0x08 — the file's fixed identity — this tracks where the name currently lives, so it **changes when the file is moved** to another directory. Its ordinal (lower 8 bytes) is always **0**: a directory is addressed as `OID:0`, so the parent reference reduces to the parent directory's own OID. |
-| 0x28 | 8 | USN (u64) | The record's own USN = its **virtual byte offset** in the journal (monotonic, never reused; can far exceed the live `$J` stream size because `$J` is a sliding window). A file's `$SI+0x40` LastUsn points at this value for its most recent record. |
+| 0x18 | 16 | Parent file ID (u128) | Same format, but this is the **current** parent directory's reference — and it can be **absent**: 234 records on each of `lab314_main`, `lab314_main_step3` and `lab314_main_step3_dirty` carry an empty name AND parent OID `0x0`, so a reader must handle a record with neither. Unlike the File ID at 0x08 — the file's fixed identity — this tracks where the name currently lives, so it **changes when the file is moved** to another directory. Its ordinal (lower 8 bytes) is always **0**: a directory is addressed as `OID:0`, so the parent reference reduces to the parent directory's own OID. |
+| 0x28 | 8 | USN (u64) | The record's own USN = its **virtual byte offset** in the journal. Monotonic **within one journal instance**, and it can far exceed the live `$J` stream size because `$J` is a sliding window. It is **not globally unique on the volume**: `fsutil usn createjournal` restarts numbering at 0 **without changing the UsnJournalId**, so USNs are reused. Measured on `lab314_main` — Windows' own `fsutil queryjournal` before and after shows the same id `0x01dd3e1feaee8191` with `Next Usn 0` then `First USN 0, Next USN 3142048`. After such a restart a file's `$SI+0x40` LastUsn may point at **another object's** record: 8 of 4,680 do, and 38 more resolve to no record at all. |
 | 0x30 | 8 | Timestamp (FILETIME) | 100 ns ticks since 1601-01-01 |
 | 0x38 | 4 | Reason (u32) | See Reason codes below |
 | 0x3C | 4 | Source info (u32) | Structurally **0** in every ReFS record (the source-info mechanism is unused on ReFS) |
@@ -36,8 +36,10 @@ it does not silently refuse them.
 
 | Component | Size | Meaning |
 |-----------|------|---------|
-| Upper 8 bytes | u64 | The **creation (home) directory's** Object Table OID — the directory the file was born in, frozen for the life of the object |
-| Lower 8 bytes | u64 | Per-directory entry ordinal — monotonically allocated, **never reused after deletion** (a deleted ordinal stays a permanent gap) |
+| First 8 bytes (`+0x08`) | u64 | Per-directory entry **ordinal** — monotonically allocated, **never reused after deletion** (a deleted ordinal stays a permanent gap) |
+| Second 8 bytes (`+0x10`) | u64 | The **creation (home) directory's** Object Table OID — the directory the file was born in, frozen for the life of the object |
+
+Read them in that order **on disk**: record 0 of `lab314_main` at physical `0x19008000` runs `58 00 00 00 | 03 00 | 00 00 | 00*8 | 0c 07 …`, i.e. `+0x08` is the ordinal `0` and `+0x10` is the home OID `0x70c`; the parent pair at `+0x18`/`+0x20` is likewise ordinal `0` then parent OID `0x705`. "Upper/lower half of a u128" describes the numeric value, not the byte order, and reading the first 8 bytes as the OID gets both fields wrong.
 
 This File ID is exactly the `(HomeOid, ordinal)` FileRef described in [File IDs](../concepts/file_ids.md).
 The upper 8 bytes name the directory whose B+-tree holds the file's object (its type-0x40 backing), and the
@@ -107,15 +109,18 @@ entry — it is created by `RefsCreateUsnJournal` and removed by `RefsDeleteUsnJ
 
 ### Change Journal file entry structure
 
-The "Change Journal" filename entry in OID 0x520 carries a `stream_count` field (3 on v3.14) and a
-value of ~720 bytes on v3.14. The value holds three sub-records after the standard directory-entry
-header (the embedded sub-record markers are described in [Directory Entries](directory_entries.md)):
+The "Change Journal" filename entry in OID 0x520 carries a `stream_count` field (3 on v3.14). Its value
+length is **704 B on 28 of the 34 volumes that have one** — not "~720"; the other lengths measured are
+3016 B (×4), 856 B, 3576 B and 720 B (×1 each). The value holds three sub-records after the standard
+directory-entry header (the embedded sub-record markers are described in
+[Directory Entries](directory_entries.md)). **Their offsets are not fixed** — locate them by walking the
+records, never by seeking a constant:
 
-| Sub-record | Type | Offset | Content |
-|------------|------|--------|---------|
-| 1 | Multi-instance (0x80000002) | varies (scan from 0xA8) | Data stream extents (likely `$J` stream) |
-| 2 | Multi-instance (0x80000002) | 0x148 | Data stream extents (likely `$Max` stream) |
-| 3 | Single-instance (0x80000001) | 0x288 | Journal metadata, 240 bytes (likely `$USN_INFO`) |
+| Sub-record | Type | Identified by | Content |
+|------------|------|---------------|---------|
+| 1 | Multi-instance (0x80000002) | type `0x000E0080`, sub_id `0x8` | A 40-byte value with **no node header and no extents** — stream-set metadata, not `$J` |
+| 2 | Multi-instance (0x80000002) | type `0x000E0080`, sub_id `0x1000` | **The `$J` extents** — its value *is* the extent node (hdr `0x88`, level 0) |
+| 3 | Single-instance (0x80000001) | type `0xF0` | **`$Max`** — a 44-byte value, at content `+0x280` / `+0x290` / `+0x150` depending on layout, never `0x288` |
 
 The `$J` data stream contains the actual `USN_RECORD_V3` entries as non-resident extent data. The
 `$Max` stream holds the journal size parameters, and is also surfaced as the type-0xF0
@@ -126,9 +131,27 @@ contains organizational metadata including a creation timestamp and journal conf
 `$J` is a **bounded rolling log**: it is pre-allocated to a fixed size (typically 32 MiB or 128 MiB, set
 by `$Max`) and, once full, the oldest records are believed to be overwritten **in place** as new ones are appended — so its
 records fill the entire allocation. forefst therefore reads the **whole allocated window** (every extent),
-not a shorter "logical size" — the two multi-instance markers each carry a fixed data-stream *type* tag,
-not a byte length. Each record is self-describing (a record length and its own USN), so a partially-filled
-journal's zero tail is skipped and the full read is complete. A record's USN is its **byte offset in `$J`**,
+not a shorter "logical size" — the two multi-instance markers each carry a fixed data-stream *type* tag
+(`0x000E0080` = 917,632), not a byte length, and capping the read at that constant would truncate every
+journal larger than ~896 KiB.
+
+The journal does nonetheless **declare its own lengths** (erratum E103), in the embedded `$DATA` row whose inline-header
+offset (value+0x00) is `0x88`: allocated size, stream size, valid data length and disk allocation at
+`+0x30`, `+0x38`, `+0x40`, `+0x48`. On all 21 corpus volumes that have a journal, exactly one row matches
+and **all four equal the sum of the `$J` extents' clusters** — across 32, 64 and 128 MiB allocations, both
+cluster sizes and a 4Kn volume. Reading the whole allocation is still the right thing for recovery, since
+records fill it; but a declared length that *disagrees* with the allocation is evidence that the
+declaration was truncated or edited, and `usn --info` reports both the declared values and any mismatch. Each record is self-describing (a record length and its own USN).
+
+**`$J` is framed in 4 KiB pages, and a record never straddles one.** Over the 7 journals measured
+(332,745 records) **0 cross a 4 KiB boundary**. When the next record would not fit in the remaining
+bytes of a page, the writer zero-pads and starts it at the next boundary: **10,499 inter-record gaps**,
+every one smaller than 4096 B (largest 1,216 B on `winsider`), every one ending exactly on a 4 KiB
+boundary, and in 10,498 of 10,499 the record that follows would not have fitted in the gap. A reader
+that walks record-to-record by declared length alone will land in padding; skip to the next 4 KiB
+boundary instead. For the same reason a partially-filled journal's tail is **not simply zeros** — it can
+hold stale content from a previous pass of the ring, so 'the zero tail is skipped' must not be read as
+'everything after the last record is empty'. A record's USN is its **byte offset in `$J`**,
 so a file's `LastUsn` (`$SI+0x40`) is the offset of that file's most recent record and is found in the
 journal **while that record is still inside the live window**; only changes older than the window's oldest
 surviving record have been overwritten and are gone.
@@ -200,13 +223,34 @@ The `--csv` and `--json` exports share one field set (17 columns, in this order)
 | 8 | `home_oid` | The containing/creation directory for a file; the object's **own** OID for a directory |
 | 9 | `file_id` | The entry ordinal (lower half of the File ID); `0` for a directory |
 | 10 | `parent_oid` | The current parent directory's OID |
-| 11 | `path` | The resolved path for the record's file |
+| 11 | `path` | The record's parent directory resolved **against the volume as it is in this image**, joined with the file name the record carries. **Read the caution below before relying on it.** |
 | 12 | `attrs_hex` | Raw file-attribute bitmask |
 | 13 | `attrs` | Decoded attribute names |
 | 14 | `record_length` | The on-disk record length |
 | 15 | `security_id` | Structurally 0 on ReFS (see the layout above) |
 | 16 | `source_info` | Structurally 0 on ReFS |
 | 17 | `parent_idx` | Structurally 0 on ReFS (a parent is a directory addressed as `OID:0`) |
+
+### Caution: `path` is resolved against the CURRENT volume, not against the moment of the event
+
+The journal is a historical record; the path column is not. It is built by looking the record's
+`parent_oid` up in the directory tree **as that tree exists in the image being read**, and joining the
+result with the file name stored in the record. Two consequences follow, and both matter when the
+column is used as evidence:
+
+- **A parent that no longer exists cannot be resolved.** The column then shows `<oid 0x…>` — an honest
+  statement that the directory is gone, not a path. On a real Windows installation this is the majority
+  case: measured over 217,892 records on one installation, **118,172 (54.2 %)** name a parent directory
+  that has since been deleted, against 99,365 (45.6 %) that still resolve. A freshly built lab volume
+  shows 0 %, which is why the effect is invisible unless you look at a system with churn.
+- **A parent that was renamed or moved after the event resolves to its CURRENT location.** The row then
+  joins a present-day directory path to a historical file name, and the combination was never a real
+  path at any moment.
+
+So `path` answers "where would this file be today, given where its parent is today" — not "where was
+this file when the event happened". For the latter, use `parent_oid` together with the journal's own
+record of directory creates, renames and deletes. Reconstructing the tree as it stood at event time is
+the correct way to answer that question and the tool does not do it yet.
 
 Directories **do** get USN records: a directory self-reference has `file_id == 0`, which is why
 `entry_type` reads `dir`. The `security_id`, `source_info`, and `parent_idx` columns are placed last

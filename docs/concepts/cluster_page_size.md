@@ -13,9 +13,11 @@ the cluster size derives the page and container geometry, and the structures tha
 ReFS supports exactly two cluster sizes — **4 KiB** and **64 KiB** — and the choice is permanent. It is
 recorded as a sector count at [VBR](../structures/vbr.md) offset `0x24` (sectors-per-cluster), and the
 cluster size is `bytes_per_sector × sectors_per_cluster` — both read from the VBR, `0x20` and `0x24`.
-Every volume measured here reports **512** bytes per sector, so the product is `512 × sectors_per_cluster`
-in practice; a 4Kn volume would report 4096 and is not represented in the measured set, which is why the
-size is derived from the field rather than assumed:
+Most volumes measured here report **512** bytes per sector, but **not all**: `lab314_4kn` and
+`lab314_4kn_step2` are real 4Kn volumes reporting **4096 × 1**, verified against the operator's own
+SHA-256 inventory (626 of 626 files). So the product must be taken from the two fields and never
+shortcut to `512 × sectors_per_cluster` — the same 4 KiB cluster is reached as `512 × 8` on a 512e
+volume and as `4096 × 1` on a 4Kn one:
 
 | Cluster size | Sectors/cluster (VBR 0x24) | CPC | Page size |
 |--------------|---------------------------|-----|-----------|

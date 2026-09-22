@@ -29,6 +29,8 @@ Page Statistics
 Page-reference checksums (parent -> child binding)
 ------------------------------------------------------------------------------
   not checked — add `--checksums` (one 4-cluster read per object; ~27,000 on a real volume)
+  child pages inside the tree are a separate check: add `--verify-pages` to any command
+  to verify each metadata page it reads against its parent's digest (3-6x slower)
 
 ------------------------------------------------------------------------------
 Redundancy / Backup Copies
@@ -37,7 +39,7 @@ Redundancy / Backup Copies
   Boot sector (backup):    LBA 4294836223 — present, identical to primary, checksum OK
   Checkpoint [PRIMARY  ]:   LCN 0x51eb04 — checksum OK, vclock=265
   Checkpoint [secondary]:   LCN 0x3d702ac — checksum OK, vclock=264
-  Superblock copies:       3
+  Superblock copies:       3 intact
       [PRIMARY] LCN 0x1e (offset 0x1e000) — checksum OK
       [backup ] LCN 0x1fffbffd (offset 0x1fffbffd000) — checksum OK
       [backup ] LCN 0x1fffbffe (offset 0x1fffbffe000) — checksum OK

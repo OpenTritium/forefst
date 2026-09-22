@@ -19,7 +19,7 @@ import sys
 import pytest
 
 HERE = os.path.dirname(os.path.abspath(__file__))
-REPO = os.path.dirname(os.path.dirname(HERE))            # .../forefstdev
+from _repo import REPO                                   # layout-independent; see _repo.py
 TOOL = os.path.join(REPO, "forefst.py")
 WORKSPACE = os.path.dirname(REPO)                        # .../refs
 

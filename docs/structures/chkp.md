@@ -1,6 +1,6 @@
 # Checkpoint (CHKP)
 
-The Checkpoint is the atomic commit point of a ReFS volume. A volume keeps two alternating checkpoints; each is one metadata page — 4 consecutive clusters on 4K-cluster volumes (16 KiB page) or 1 cluster on 64K-cluster volumes (64 KiB page). The copy with the higher virtual clock is the current one, and the lower-clock copy is the previous consistent state (a rollback target until the next flush).
+The Checkpoint is the atomic commit point of a ReFS volume. A volume keeps two alternating checkpoints; each is one metadata page — 4 consecutive clusters on 4K-cluster volumes (16 KiB page) or 1 cluster on 64K-cluster volumes (64 KiB page); the page's BYTE size is what is fixed, not its cluster count (erratum E102). The copy with the higher virtual clock is the current one, and the lower-clock copy is the previous consistent state (a rollback target until the next flush).
 
 ## Field Layout
 
@@ -20,11 +20,13 @@ The Checkpoint is the atomic commit point of a ReFS volume. A volume keeps two a
 | 0x88 | 4 | Data area end offset (u32) | 0x680 (v3.4), 0x380 (v3.14) on most checkpoints, but **0x0 on some v3.14-native images** — the 0x88–0x8F region co-varies populated-vs-zeroed per checkpoint, so do not treat it as a fixed constant |
 | 0x8C | 4 | Max root capacity (u32) | 0x20 (32) on most images but **0x0 on the same v3.14-native images** as 0x88; the "MS_CHECKPOINT_MAX_ROOTS = 0x20" label holds only where the region is populated |
 | 0x90 | 4 | Root count (u32) | Always 13 |
-| 0x94 | var | Root pointer list | **Direct** (flag 0x0200 clear): 13 `u32` **in-page offsets** start here, each pointing at one page reference elsewhere in the checkpoint — the references themselves do *not* start at 0x94. **Indirect** (0x0200 set): this is a `u32` **in-page offset** to an array of 13 `u32` offsets, each pointing at one root's page reference, spaced `0x5C` apart. It is *not* a pointer to a separate page — see the walk-through below |
+| 0x94 | var | Root pointer list | **Direct** (flag 0x0200 clear): 13 `u32` **in-page offsets** start here, each pointing at one page reference elsewhere in the checkpoint — the references themselves do *not* start at 0x94. **Indirect** (0x0200 set): this is a `u32` **in-page offset** to an array of 13 `u32` offsets, each pointing at one root's page reference. The spacing is **the page-reference size stored at `CHKP+0x5C`**, not the literal 0x5C: measured on 226 checkpoint copies it equals `u32@CHKP+0x5C` on 226/226 — 104 (0x68) on 32 copies, 48 (0x30) on 186, 72 (0x48) on 8 — and a literal 92-byte spacing occurs on 0. The offset array itself is `u32` entries at stride 4. It is *not* a pointer to a separate page — see the walk-through below |
 
 ## Checkpoint selection and fallback
 
 Each CHKP carries a **self-checksum verified at mount** — the algorithm is cluster-size-dependent (4-byte CRC32-C on 4K-cluster, 8-byte CRC64 on 64K-cluster, 32-byte SHA-256 on SHA-256 volumes), the same mechanism the [Superblock](supb.md) uses. At mount, `ChooseCheckpointRecord` picks the copy with the highest virtual clock among the copies that pass their checksum. An invalid higher-clock copy is skipped, falling back automatically to the lower-clock valid copy; if both fail, the mount fails. Because each flush writes the *other* slot with clock+1, the lower-clock slot always holds the previous consistent state.
+
+The comparison reads the clock at **CHKP+0x60** (erratum E101), and the two clocks are **not interchangeable for this purpose**: `ChooseCheckpointRecord<0>` (win11 10.0.26100.8115, `1401051b0`) compares `*(unsigned long long *)(record + 0x60)` only. On an equal +0x60 it returns a **distinct third value rather than naming a winner** — the tie is signalled, not silently resolved. A tie is a normal state (two equally current copies), not corruption; a volume in the corpus exhibits one naturally, with both copies at clock 662. Because selection is keyed on +0x60, a copy whose +0x10 and +0x60 disagree is worth attention: the two match on every corpus volume measured, so a divergence is not a normal state.
 
 ## CHKP Flags (offset 0x78)
 

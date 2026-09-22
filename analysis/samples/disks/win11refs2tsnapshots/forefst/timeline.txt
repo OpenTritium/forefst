@@ -3,13 +3,13 @@
 ==============================================================================
 ReFS Super-Timeline — win11refs2tsnapshots.raw
 ==============================================================================
-  Sources merged: USN=0  MLog=307  $SI-MACB=1216  (time-sorted; correlated by name/path —
+  Sources merged: USN=0  MLog=1626  $SI-MACB=1216  (time-sorted; correlated by name/path —
                   a file has no OID: $SI shows OID —, USN the home-dir OID, MLog the target OID)
   NOTE: USN journal inactive on this image — timeline is $SI + MLog only.
   Caveat: USN and $SI carry exact FILETIMEs. MLog has NO wall-clock time — an MLog row's time is
           the affected object's embedded $SI birth (approximate; for a RENAME/MOVE it is the object
           birth, not the op time). MLog times that predate the volume are undated + marked.
-          (4 MLog rows had an impossible pre-volume time → undated.)
+          (9 MLog rows had an impossible pre-volume time → undated.)
 ------------------------------------------------------------------------------
   Timestamp (UTC)          Src    OID         Name/Path                   Event
   ----------------------------------------------------------------------------
@@ -137,81 +137,81 @@ ReFS Super-Timeline — win11refs2tsnapshots.raw
   2026-03-01 07:16:07 UTC  $SI    —           test/elvis_dir_record_44…   Created
   2026-03-01 07:16:07 UTC  $SI    —           test/elvis_dir_record_44…   Modified
   2026-03-01 07:16:07 UTC  $SI    —           test/elvis_dir_record_44…   Accessed
-  2026-05-16 16:50:42 UTC  MLog   —                                       MODIFY
-  2026-05-16 16:50:42 UTC  MLog   —                                       MODIFY
+  2026-05-16 16:50:44 UTC  MLog   —                                       MODIFY
   2026-05-16 16:50:44 UTC  MLog   0x600       /                           WRITE
+  2026-05-16 16:50:44 UTC  MLog   0x600       /                           WRITE
+  2026-05-16 16:50:44 UTC  MLog   0x600       /                           WRITE
+  2026-05-16 16:50:44 UTC  MLog   —                                       MODIFY
+  2026-05-16 16:50:44 UTC  MLog   0x600       /                           MODIFY
+  2026-05-16 16:50:44 UTC  MLog   0x600       /                           MODIFY
+  2026-05-16 16:50:44 UTC  MLog   0x600       /                           MODIFY
   2026-05-16 16:50:46 UTC  $SI    0x701       System Volume Information   Created
   2026-05-16 16:50:46 UTC  MLog   0x701       /System Volume Informati…   CREATE
+  2026-05-16 16:50:46 UTC  MLog   0x600       /                           CREATE
+  2026-05-16 16:50:46 UTC  MLog   0x701       /System Volume Informati…   MODIFY
+  2026-05-16 16:50:46 UTC  MLog   0x701       /System Volume Informati…   MODIFY
+  2026-05-16 16:50:46 UTC  MLog   0x701       /System Volume Informati…   CREATE
+  2026-05-16 16:50:46 UTC  MLog   0x701       /System Volume Informati…   MODIFY
+  2026-05-16 16:50:46 UTC  MLog   0x701       /System Volume Informati…   CREATE
+  2026-05-16 16:50:46 UTC  MLog   0x701       /System Volume Informati…   MODIFY
+  2026-05-16 16:50:46 UTC  MLog   0x701       /System Volume Informati…   CREATE
+  2026-05-16 16:50:46 UTC  MLog   0x701       /System Volume Informati…   STREAM_UPD
+  2026-05-16 16:50:46 UTC  MLog   0x701       /System Volume Informati…   MODIFY
+  2026-05-16 16:50:46 UTC  MLog   0x701       /System Volume Informati…   CREATE
+  2026-05-16 16:50:46 UTC  MLog   0x701       /System Volume Informati…   STREAM_UPD
+  2026-05-16 16:50:46 UTC  MLog   0x701       /System Volume Informati…   MODIFY
+  2026-05-16 16:50:46 UTC  MLog   0x701       /System Volume Informati…   CREATE
+  2026-05-16 16:50:46 UTC  MLog   0x701       /System Volume Informati…   MODIFY
+  2026-05-16 16:50:46 UTC  MLog   0x701       /System Volume Informati…   CREATE
+  2026-05-16 16:50:46 UTC  MLog   0x701       /System Volume Informati…   MODIFY
+  2026-05-16 16:50:46 UTC  MLog   0x701       /System Volume Informati…   CREATE
+  2026-05-16 16:50:46 UTC  MLog   0x701       /System Volume Informati…   MODIFY
+  2026-05-16 16:50:46 UTC  MLog   0x701       /System Volume Informati…   CREATE
+  2026-05-16 16:50:46 UTC  MLog   0x701       /System Volume Informati…   MODIFY
+  2026-05-16 16:50:46 UTC  MLog   0x701       /System Volume Informati…   CREATE
+  2026-05-16 16:50:46 UTC  MLog   0x701       /System Volume Informati…   MODIFY
+  2026-05-16 16:50:46 UTC  MLog   0x701       /System Volume Informati…   CREATE
+  2026-05-16 16:50:46 UTC  MLog   0x701       /System Volume Informati…   MODIFY
+  2026-05-16 16:50:46 UTC  MLog   0x701       /System Volume Informati…   CREATE
+  2026-05-16 16:50:46 UTC  MLog   0x701       /System Volume Informati…   MODIFY
+  2026-05-16 16:50:46 UTC  MLog   0x701       /System Volume Informati…   CREATE
+  2026-05-16 16:50:46 UTC  MLog   0x701       /System Volume Informati…   MODIFY
+  2026-05-16 16:50:46 UTC  MLog   0x701       /System Volume Informati…   CREATE
+  2026-05-16 16:50:46 UTC  MLog   0x701       /System Volume Informati…   MODIFY
+  2026-05-16 16:50:46 UTC  MLog   0x701       /System Volume Informati…   CREATE
+  2026-05-16 16:50:46 UTC  MLog   0x701       /System Volume Informati…   MODIFY
+  2026-05-16 16:50:46 UTC  MLog   0x701       /System Volume Informati…   CREATE
+  2026-05-16 16:50:46 UTC  MLog   0x701       /System Volume Informati…   MODIFY
+  2026-05-16 16:50:46 UTC  MLog   0x701       /System Volume Informati…   CREATE
+  2026-05-16 16:50:46 UTC  MLog   0x701       /System Volume Informati…   MODIFY
   2026-05-16 16:50:46 UTC  $SI    —           System Volume Informatio…   Created
+  2026-05-16 16:50:46 UTC  MLog   0x701       /System Volume Informati…   CREATE
+  2026-05-16 16:50:46 UTC  MLog   0x701       /System Volume Informati…   WRITE
   2026-05-16 16:50:46 UTC  $SI    —           System Volume Informatio…   Modified
   2026-05-16 16:50:46 UTC  $SI    —           System Volume Informatio…   Metadata-Changed
   2026-05-16 16:50:46 UTC  $SI    —           System Volume Informatio…   Accessed
-  2026-05-16 16:50:53 UTC  $SI    —           System Volume Informatio…   Created
-  2026-05-16 16:50:53 UTC  $SI    —           System Volume Informatio…   Modified
-  2026-05-16 16:50:53 UTC  $SI    —           System Volume Informatio…   Metadata-Changed
-  2026-05-16 16:50:53 UTC  $SI    —           System Volume Informatio…   Accessed
-  2026-05-16 16:50:53 UTC  MLog   0x701       /System Volume Informati…   CREATE
-  2026-05-16 16:50:55 UTC  $SI    0x701       System Volume Information   Modified
-  2026-05-16 16:50:55 UTC  $SI    0x701       System Volume Information   Metadata-Changed
-  2026-05-16 16:50:55 UTC  $SI    0x701       System Volume Information   Accessed
-  2026-05-16 16:51:49 UTC  $SI    0x702       test                        Created
-  2026-05-16 16:51:49 UTC  MLog   0x702       /test                       CREATE
-  2026-05-16 16:51:50 UTC  $SI    0x703       test/elvis_dir_record_44…   Created
-  2026-05-16 16:51:50 UTC  MLog   0x703       /test/elvis_dir_record_4…   CREATE
-  2026-05-16 16:51:50 UTC  MLog   0x702       /test                       CREATE
-  2026-05-16 16:51:50 UTC  MLog   0x702       /test                       CREATE
-  2026-05-16 16:51:50 UTC  $SI    0x704       test/elvis_dir_record_44…   Created
-  2026-05-16 16:51:50 UTC  MLog   0x704       /test/elvis_dir_record_4…   CREATE
-  2026-05-16 16:51:50 UTC  MLog   0x702       /test                       CREATE
-  2026-05-16 16:51:50 UTC  MLog   0x703       /test/elvis_dir_record_4…   RENAME
-  2026-05-16 16:51:50 UTC  MLog   0x703       /test/elvis_dir_record_4…   CREATE
-  2026-05-16 16:51:50 UTC  MLog   0x703       /test/elvis_dir_record_4…   CREATE
-  2026-05-16 16:51:50 UTC  MLog   0x703       /test/elvis_dir_record_4…   CREATE
-  2026-05-16 16:51:51 UTC  $SI    —           test/elvis_dir_record_44…   Created
-  2026-05-16 16:51:51 UTC  MLog   0x703       /test/elvis_dir_record_4…   CREATE
-  2026-05-16 16:51:51 UTC  $SI    0x706       test/elvis_dir_record_44…   Created
-  2026-05-16 16:51:51 UTC  MLog   0x706       /test/elvis_dir_record_4…   CREATE
-  2026-05-16 16:51:51 UTC  $SI    —           test/elvis_dir_record_44…   Created
-  2026-05-16 16:51:51 UTC  $SI    —           test/elvis_dir_record_44…   Created
-  2026-05-16 16:51:51 UTC  MLog   0x703       /test/elvis_dir_record_4…   CREATE
-  2026-05-16 16:51:51 UTC  $SI    0x707       test/elvis_dir_record_44…   Created
-  2026-05-16 16:51:51 UTC  $SI    —           test/elvis_dir_record_44…   Modified
-  2026-05-16 16:51:51 UTC  MLog   0x702       /test                       MOVE
-  2026-05-16 16:51:51 UTC  MLog   0x704       /test/elvis_dir_record_4…   CREATE
-  2026-05-16 16:51:51 UTC  $SI    —           test/elvis_dir_record_44…   Created
-  2026-05-16 16:51:51 UTC  MLog   0x703       /test/elvis_dir_record_4…   CREATE
-  2026-05-16 16:51:51 UTC  $SI    —           test/elvis_dir_record_44…   Accessed
-  2026-05-16 16:51:51 UTC  MLog   0x704       /test/elvis_dir_record_4…   RENAME
-  2026-05-16 16:51:51 UTC  $SI    0x708       test/elvis_dir_record_44…   Created
-  2026-05-16 16:51:51 UTC  MLog   0x708       /test/elvis_dir_record_4…   CREATE
-  2026-05-16 16:51:51 UTC  MLog   0x709       OID 0x709                   CREATE
-  2026-05-16 16:51:51 UTC  $SI    —           test/xbpt_sync_zulu_9119…   Created
-  2026-05-16 16:51:51 UTC  MLog   0x702       /test                       CREATE
-  2026-05-16 16:51:51 UTC  $SI    —           test/elvis_dir_record_44…   Created
-  2026-05-16 16:51:51 UTC  MLog   0x708       /test/elvis_dir_record_4…   CREATE
-  2026-05-16 16:51:51 UTC  $SI    —           test/elvis_dir_record_44…   Created
-  2026-05-16 16:51:51 UTC  MLog   0x704       /test/elvis_dir_record_4…   CREATE
-  2026-05-16 16:51:51 UTC  MLog   0x704       /test/elvis_dir_record_4…   CREATE
-  2026-05-16 16:51:51 UTC  MLog   0x702       /test                       CREATE
-  2026-05-16 16:51:51 UTC  MLog   0x707       /test/elvis_dir_record_4…   CREATE
-  2026-05-16 16:51:51 UTC  MLog   0x703       /test/elvis_dir_record_4…   CREATE
-  2026-05-16 16:51:51 UTC  MLog   0x702       /test                       CREATE
-  2026-05-16 16:51:51 UTC  MLog   0x707       /test/elvis_dir_record_4…   CREATE
-  2026-05-16 16:51:51 UTC  MLog   0x70f       /test/elvis_dir_record_4…   MOVE
-  2026-05-16 16:51:51 UTC  $SI    0x70b       test/elvis_dir_record_44…   Created
-  2026-05-16 16:51:51 UTC  MLog   0x70b       /test/elvis_dir_record_4…   CREATE
-  2026-05-16 16:51:51 UTC  MLog   0x70c       OID 0x70c                   CREATE
-  2026-05-16 16:51:51 UTC  MLog   0x702       /test                       CREATE
-  2026-05-16 16:51:51 UTC  MLog   0x702       /test                       CREATE
-  2026-05-16 16:51:51 UTC  MLog   0x707       /test/elvis_dir_record_4…   CREATE
-  2026-05-16 16:51:51 UTC  $SI    —           test/xbpt_victor_lima_25…   Created
-  2026-05-16 16:51:51 UTC  $SI    —           test/elvis_dir_record_44…   Created
-  2026-05-16 16:51:51 UTC  MLog   0x704       /test/elvis_dir_record_4…   CREATE
-  2026-05-16 16:51:51 UTC  MLog   0x707       /test/elvis_dir_record_4…   MOVE
-  2026-05-16 16:51:52 UTC  MLog   0x704       /test/elvis_dir_record_4…   CREATE
-  2026-05-16 16:51:52 UTC  MLog   0x70b       /test/elvis_dir_record_4…   CREATE
-  2026-05-16 16:51:52 UTC  $SI    0x70d       test/elvis_dir_record_44…   Created
-  2026-05-16 16:51:52 UTC  MLog   0x706       /test/elvis_dir_record_4…   CREATE
-  2026-05-16 16:51:52 UTC  $SI    —           test/elvis_dir_record_44…   Modified
+  2026-05-16 16:50:46 UTC  MLog   0x701       /System Volume Informati…   CREATE
+  2026-05-16 16:50:46 UTC  MLog   0x701       /System Volume Informati…   MODIFY
+  2026-05-16 16:50:46 UTC  MLog   0x701       /System Volume Informati…   CREATE
+  2026-05-16 16:50:46 UTC  MLog   0x701       /System Volume Informati…   MODIFY
+  2026-05-16 16:50:46 UTC  MLog   0x701       /System Volume Informati…   CREATE
+  2026-05-16 16:50:46 UTC  MLog   0x701       /System Volume Informati…   MODIFY
+  2026-05-16 16:50:46 UTC  MLog   0x701       /System Volume Informati…   CREATE
+  2026-05-16 16:50:46 UTC  MLog   0x701       /System Volume Informati…   MODIFY
+  2026-05-16 16:50:46 UTC  MLog   0x701       /System Volume Informati…   CREATE
+  2026-05-16 16:50:46 UTC  MLog   0x701       /System Volume Informati…   MODIFY
+  2026-05-16 16:50:46 UTC  MLog   0x701       /System Volume Informati…   CREATE
+  2026-05-16 16:50:46 UTC  MLog   0x701       /System Volume Informati…   MODIFY
+  2026-05-16 16:50:46 UTC  MLog   0x701       /System Volume Informati…   CREATE
+  2026-05-16 16:50:46 UTC  MLog   0x701       /System Volume Informati…   MODIFY
+  2026-05-16 16:50:46 UTC  MLog   0x701       /System Volume Informati…   CREATE
+  2026-05-16 16:50:46 UTC  MLog   0x701       /System Volume Informati…   MODIFY
+  2026-05-16 16:50:46 UTC  MLog   0x701       /System Volume Informati…   CREATE
+  2026-05-16 16:50:46 UTC  MLog   0x701       /System Volume Informati…   MODIFY
+  2026-05-16 16:50:46 UTC  MLog   0x701       /System Volume Informati…   CREATE
+  2026-05-16 16:50:46 UTC  MLog   0x701       /System Volume Informati…   MODIFY
+  2026-05-16 16:50:46 UTC  MLog   0x701       /System Volume Informati…   CREATE
+  2026-05-16 16:50:46 UTC  MLog   0x701       /System Volume Informati…   MODIFY
+  2026-05-16 16:50:46 UTC  MLog   0x701       /System Volume Informati…   CREATE
 ------------------------------------------------------------------------------
   200 events
