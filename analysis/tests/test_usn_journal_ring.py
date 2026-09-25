@@ -66,11 +66,24 @@ def test_zero_filled_slack_is_not_reported_as_torn():
 
 
 def test_non_zero_unparseable_bytes_are_reported():
-    F._SKIP_NOTES.clear()
+    """Beyond the last record they are unwritten ring space: a note about the data (expected), not a skip."""
+    F._SKIP_NOTES.clear(); F._SKIP_EXPECTED.clear()
     buf = bytearray(_journal([(0x100, "a")], 0x8000))
     buf[0x2000:0x2040] = b"\xde\xad\xbe\xef" * 16      # non-zero, parses as no record
     F.parse_usn_records(bytes(buf), alloc=0x8000)
+    assert any(k[0] == "USN journal" for k in F._SKIP_EXPECTED)
+    assert not any(k[0] == "USN journal" for k in F._SKIP_NOTES)
+    F._SKIP_EXPECTED.clear()
+
+
+def test_non_zero_unparseable_bytes_inside_the_written_span_are_a_skip():
+    F._SKIP_NOTES.clear(); F._SKIP_EXPECTED.clear()
+    buf = bytearray(_journal([(0x100, "a"), (0x4000, "b")], 0x8000))
+    buf[0x2000:0x2040] = b"\xde\xad\xbe\xef" * 16      # between two records: torn or overwritten
+    F.parse_usn_records(bytes(buf), alloc=0x8000)
     assert any(k[0] == "USN journal" for k in F._SKIP_NOTES)
+    assert not F._SKIP_EXPECTED
+    F._SKIP_NOTES.clear()
 
 
 def test_alloc_omitted_means_no_invariant_check():

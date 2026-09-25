@@ -25,3 +25,5 @@ extent_map_fallback	_find_extents_in_subrecord	forefstdev/forefst.py	the ONE heu
 extent_map_dispatch	_decode_holder_extents	forefstdev/forefst.py	chooses among the above; the ORDER lives here and nowhere else
 content_hole_check	content_holes	forefstdev/forefst.py	every content producer routes through it (gate 1d)
 extract_content_exit	_emit_checked	forefstdev/forefst.py	the one content exit of cmd_extract (gate 1e)
+page_size	_page_bytes	forefstdev/forefst.py	bytes in one metadata page: 16 KiB on 4K clusters, 64 KiB on 64K (N52); refsanalysis imports it
+extent_row_step	_extent_row_step	forefstdev/forefst.py	the distance to the next extent row = declared size rounded UP to 8 (rows are 8-byte aligned); 1.13.0 stepped by the size and verified 127 of 142 CRC clusters. Every stride site uses it; check_row_stride.py fails on any other

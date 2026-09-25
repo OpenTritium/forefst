@@ -1153,7 +1153,7 @@ File Data Locations
             record=embedded, size=460827, attrs=Archive, extents=3, clusters=113
             created=2026-05-16 16:34:59
   EXTENT    testspecials/dir_gamma_163068/dir_echo_659970/dir_cache_507104/dir_romeo_851778/dir_india_917272/papa_kilo_757910.json
-            record=split, size=163090, attrs=Archive, extents=2, clusters=40
+            record=split, size=163090, attrs=0x0, extents=2, clusters=40
             created=2026-05-16 16:34:49
   EXTENT    testspecials/dir_gamma_163068/dir_echo_659970/dir_cache_507104/dir_romeo_851778/dir_india_917272/backup_lima_536980.tmp
             record=embedded, size=431102, attrs=Archive, extents=3, clusters=106

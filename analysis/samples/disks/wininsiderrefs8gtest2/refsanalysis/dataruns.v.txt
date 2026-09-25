@@ -2991,7 +2991,7 @@ File Data Locations
   INLINE    testspecials/dir_record_119518/dir_yankee_902047/hardlink_output_781592.lnk
             size=0 (bytes stored in the record; record is split) — no clusters
   EXTENT    testspecials/dir_record_119518/dir_yankee_902047/india_uniform_529180.dat
-            record=split, size=463426, attrs=Archive, extents=2, clusters=8
+            record=split, size=463426, attrs=0x0, extents=2, clusters=8
             created=2026-05-19 19:58:13
             run: fvcn=0 VLCN=0x7a4c PLCN=0x2e4c clusters=4 disk=0x2f4c0000
             run: fvcn=4 VLCN=0x7a50 PLCN=0x2e50 clusters=4 disk=0x2f500000

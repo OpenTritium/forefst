@@ -45,9 +45,14 @@ def test_more_evidence_never_lowers_the_tier(flags):
 
 
 @pytest.mark.parametrize("flags", [["PRE_FORMAT"], ["CHANGE_LATE", "PRE_FORMAT"], ["CREATE_GT_MODIFY"]])
-def test_identical_without_journal_evidence(flags):
-    """Same inputs, same verdict -- the property that failed before the two surfaces shared a function."""
-    assert F.timestomp_verdict(flags, usn_conf=False) == F.timestomp_verdict(flags, usn_conf=False)
+def test_no_authoritative_evidence_never_reaches_high(flags):
+    """HIGH comes only from an authoritative source -- the journal or a hard-link sibling (MD_TS_RA_008).
+
+    K086: this test used to compare a call with ITSELF, which any deterministic function passes -- it held against
+    a stub that answers HIGH for everything. This one fails on that stub, and the second assertion shows the same
+    signal set does reach HIGH once journal evidence is present, so the test can tell the two apart."""
+    assert F.timestomp_verdict(flags, usn_conf=False, hl_conf=False)[0] != "HIGH"
+    assert F.timestomp_verdict(["CREATE_GT_MODIFY"], usn_conf=True)[0] == "HIGH"
 
 
 def test_copy_signature_is_info_not_suspicion():

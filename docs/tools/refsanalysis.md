@@ -4,6 +4,18 @@ ReFS **structure and lab** analysis tool — boot sector, superblock, checkpoint
 
 > **Forensic commands moved to forefst.** The file-level forensic commands — `usn`, `mlog`, `timeline`, `timestomp`, `extract`, `security`, `reparse`, `deleted`, `snapshots`, `integrity`, `export`, `dataruns` — now live in [`forefst.py`](forefst.md). Running them here prints a one-line redirect — **or reach them without leaving refsanalysis via the `forefst` passthrough** (see [Running forefst commands](#running-forefst-commands-via-refsanalysis)).
 
+> **Known issues in 1.13.1.** Several of the release's known defects are in refsanalysis:
+> - `supb --verify` checks neither the superblock's self-checksum nor the checkpoints' (its checkpoint rows read OK
+>   over a corrupt checkpoint); neither it nor `boot --verify` exits non-zero when a row reads FAIL.
+> - `summary`/`summary++`, `supb` (its `*` marker) and `chkp` without `--verify` can describe a checkpoint that
+>   failed its checksum, and `containers` reads the Container Table from that checkpoint without a warning.
+> - `summary` prints an all-zero volume GUID when the primary superblock was lost.
+> - A command exits 0 after skipping unreadable metadata, and `summary` prints an unreadable table as `0 rows`.
+> - The `forefst` passthrough can exit 0 where `forefst.py` itself exits 2: it keeps a command's own exit 2 (such as
+>   `integrity`'s) but not the one `forefst.py` adds for skipped metadata or a volume finding (such as `summary`'s).
+>
+> The full list, with what to do meanwhile, is in [forefst.md — Known issues in 1.13.1](forefst.md#known-issues-in-1131).
+
 ## Invocation
 
 ```sh
@@ -32,7 +44,7 @@ Every subcommand accepts `--partition-start <offset>` to override GPT/volume det
 subcommand is reachable without leaving refsanalysis — the file lister (`files`/`summary`/
 `search`/`details`) and the full forensic suite (`usn`/`mlog`/`timeline`/`timestomp`/`extract`/`security`/
 `reparse`/`deleted`/`snapshots`/`integrity`/`export`/`dataruns`). It re-uses forefst's real dispatch (no code
-is duplicated), so the behaviour, options, and output are identical to running `forefst.py` directly.
+is duplicated), so the behaviour, options, and output are identical to running `forefst.py` directly — except the exit code: a command's own exit 2 (such as `integrity`'s) is kept, but the exit 2 that `forefst.py` adds for skipped metadata or a volume finding (as in `summary`) is not, so the passthrough can exit 0 where `forefst.py` exits 2 (see Known issues).
 
 ```sh
 refsanalysis.py disk.raw forefst usn --stats            # forefst's USN activity summary
@@ -76,8 +88,8 @@ refsanalysis.py disk.raw all > structure_dump.txt       # run every structure to
 | Command | Description | Examples |
 |---------|-------------|----------|
 | `files` | Flat namespace listing from the root (or `--oid` subtree). `-v` adds a wide table with decoded attributes, sizes and modified-times. `--depth N` bounds recursion (default FULL — the whole tree). | `files -v` · `files --oid 0x705` |
-| `attributes` | Per-file attribute deep-dive: decoded flags (TitleCase, space-pipe-space separated, e.g. `Archive | Encrypted`), internal flags, timestamps, EFS/reparse/WSL. `-v` decodes the Extended-Attributes block ($LXMOD/$LXUID/…). `--filter {encrypted,wsl,reparse,snapshot}` narrows results. `--depth N` defaults to FULL. | `attributes --filter wsl` · `attributes -v --filter reparse` |
-| `details` | Full record for ANY file by **path**: timestamps, attributes, SecurityId, the `FileRef HomeOid:FileId`, and — for resident files — inline sub-records ($DATA, ADS, snapshots, $EA, reparse). For a non-resident file it adds a relocation note when the creation directory (HomeOid) differs from the current parent. Files have no Object-Table OID of their own — address them by path. `--json` for structured output. | `details /hello.txt` · `details /dir/big.bin --json` |
+| `attributes` | Per-file attribute deep-dive: decoded flags (TitleCase, space-pipe-space separated, e.g. `Archive | Encrypted`), internal flags, timestamps, EFS/reparse/WSL, and a `Storage:` line in the words `files` uses — the data residency (`inline` / `extents` / `snapshot-shared` / `unallocated` / `unknown`) and the record placement (`embedded`, with the row's size, or `split`). `-v` decodes the Extended-Attributes block ($LXMOD/$LXUID/…). `--filter {encrypted,wsl,reparse,snapshot}` narrows results. `--depth N` defaults to FULL. | `attributes --filter wsl` · `attributes -v --filter reparse` |
+| `details` | Full record for ANY file by **path**: timestamps, attributes, SecurityId, the `FileRef HomeOid:FileId`, and — for resident files — inline sub-records ($DATA, ADS, snapshots, $EA, reparse). For a non-resident file it adds a relocation note when the creation directory (HomeOid) differs from the current parent. Files have no Object-Table OID of their own — address them by path. Its `Storage:` line (JSON `storage` / `record_placement`) gives the data residency and record placement as `files` reports them. `--json` for structured output. | `details /hello.txt` · `details /dir/big.bin --json` |
 
 > forefst's `files`/`details` subcommands are the forensic-grade equivalents (40-column CSV/JSON, owner+group SID, hard-link names+counts, snapshot counts, reparse targets, FileRef/FileId/HomeOid join keys, IsSparse). refsanalysis keeps a lighter, human-readable lab view.
 
@@ -91,8 +103,8 @@ refsanalysis.py disk.raw all > structure_dump.txt       # run every structure to
 | `objects` | Object-ID table: every OID with friendly name and root LCN. `-v` adds physical LCNs; `-vv` dumps raw entries; `--verify` checks page signatures. | `objects` · `objects -vv --verify` |
 | `schema` | Schema / attribute table-type definitions (key rules, value layouts). `-vv` prints raw schema values. | `schema` · `schema --verify` |
 | `parentchild` | Directory parent→child relationships. `-v` draws an ASCII tree; `-vv` dumps raw rows; `--verify` runs 6 structural checks. | `parentchild -v` · `parentchild -vv --verify` |
-| `containers` | Container table & allocator: geometry, mapped-container counts, capacity/type totals. `-v` appends the per-container table (ID, Phys LCN, Flags, Row, Type). For free-vs-used space use `allocators` — containers are the address map, not the allocation state. | `containers` · `containers -v` |
-| `allocators` | The three allocator tiers (Medium / Container / Small) and the volume's free-vs-used accounting. For each tier it prints the totals **recomputed from the allocation bitmaps** beside the ones in the **summary ReFS keeps in the tier's root page**, then the volume capacity. The two can legitimately differ — on ReFS 3.4 the tiers are strictly separated, so the Medium rows span less than the summary while the free counts still match — and if both differ the volume is damaged. Rows are accepted only from pages that claim the tier's own table; anything rejected is reported. `-v` adds the individual ranges, `-vv` every row, `--json` machine-readable. | `allocators` · `allocators -v` · `allocators --json` |
+| `containers` | Container table & allocator: geometry, mapped-container counts, capacity/type totals. `-v` appends the per-container table (ID, Phys LCN, Flags, Row, Type). For used-vs-unallocated space use `allocators` — containers are the address map, not the allocation state. | `containers` · `containers -v` |
+| `allocators` | The three allocator tiers (Medium / Container / Small) and the volume's used-vs-unallocated accounting. For each tier it prints the totals **recomputed from the allocation bitmaps** beside the ones in the **summary ReFS keeps in the tier's root page**, then the volume capacity. The two can legitimately differ — on ReFS 3.4 the tiers are strictly separated, so the Medium rows span less than the summary while the not-allocated counts still match — and if both differ the volume is damaged. Rows are accepted only from pages that claim the tier's own table; anything rejected is reported. `-v` adds the individual ranges, `-vv` every row, `--json` machine-readable. | `allocators` · `allocators -v` · `allocators --json` |
 | `upcase` | Unicode upcase (case-folding) table. `-v` shows sample mappings; `-vv` dumps every non-identity mapping; `--verify` runs six checks. | `upcase` · `upcase -vv` |
 | `oid30` | OID 0x30 session-activity table (v3.10+). `-v` dumps every row's decoded fields. | `oid30` · `oid30 -v` |
 

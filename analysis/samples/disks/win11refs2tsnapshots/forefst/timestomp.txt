@@ -30,7 +30,7 @@ ReFS Timestamp-Anomaly (Timestomp) Detection
   HIGH   journal/link  2026-05-16 16:51:51   2026-05-16 16:51:54   test/elvis_dir_record_449015/elvis_dir_papa_104235/elvis_dir_sync_718743/elvis_dir_gamma_109016/elvis_dir_zulu_984398/elvis_dir_cache_558805/xbpt_hardlink_audit_219848.cfg
          signals: HARDLINK_MACB_MISMATCH
 
-  (0 MEDIUM + 0 LOW row(s) hidden — `--min MEDIUM` / `--min LOW` to show; CSV/JSON already include every tier.)
+  (0 MEDIUM + 0 LOW + 53 INFO row(s) hidden — `--min MEDIUM` / `--min LOW` / `--min INFO` to show; CSV/JSON already include every tier.)
 
   Signal legend  (AUTHORITATIVE = independent evidence · HEURISTIC = suggestive $SI-only):
     [AUTHORITATIVE]

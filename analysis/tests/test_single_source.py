@@ -2,24 +2,35 @@
 
 The follow-up audit was right: `forefst.py` staying self-contained does NOT require `refsanalysis` to duplicate
 it — refsanalysis imports *from* forefst. Only helpers whose LOGIC is exactly the same (verified AST-identical AND
-free of any module global that differs, e.g. PROG) are shared; divergent code (_human_size KB/KiB, _filetime_to_str,
-the parsers, die) is deliberately left alone.
+free of any module global that differs, e.g. PROG) are shared; divergent code (_human_size KB/KiB, die, main) is
+deliberately left alone.
+
+K086: `_filetime_to_str`, `_parse_dir_entries` and `_walk_dir_tree` used to be listed as "must differ", and the guard
+asserted only that the two objects were not the same object. They were not different in any way that mattered --
+`_filetime_to_str` agreed on 1,037,632 of 1,037,632 inputs -- and the walker copies each lacked what the other had
+(a cycle guard; real resident sizes). They are merged in forefst.py now, and a divergence is asserted as BEHAVIOUR.
 """
 import forefst as F
 import refsanalysis as R
 
 # The helpers refsanalysis now imports from forefst instead of redefining (directly referenced ones).
 SINGLE_SOURCED = ["_attrs_to_str", "_find_snapshot_files", "_guid_str", "_hx",
-                  "_parse_extended_attributes", "_vbr_checksum"]
+                  "_parse_extended_attributes", "_vbr_checksum",
+                  "_walk_dir_tree", "_filetime_to_str"]                  # K086: merged
 
 # Functions that MUST remain distinct between the two tools (different behaviour or module identity) — a guard so a
 # future "de-duplication" pass cannot wrongly merge them.
-MUST_DIFFER = ["die", "_human_size", "_filetime_to_str", "_parse_dir_entries", "_walk_dir_tree", "main"]
+MUST_DIFFER = ["die", "_human_size", "main"]
 
 
 def test_shared_helpers_are_single_source():
     for name in SINGLE_SOURCED:
         assert getattr(R, name) is getattr(F, name), f"{name} should be forefst's object (single source)"
+
+
+def test_human_size_differs_in_BEHAVIOUR_not_just_identity():
+    """K086: `r is not f` is true of any two copies, identical or not. The divergence worth guarding is the unit."""
+    assert F._human_size(1536) == "1.5 KB" and R._human_size(1536) == "1.5 KiB"
 
 
 def test_intentionally_divergent_functions_stay_distinct():

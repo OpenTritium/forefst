@@ -20,7 +20,7 @@ ReFS Deleted File Finder
 ── B+-tree Node Slack Scan (Method 5) ──
   Recovering deleted directory entries from metadata-page free space
   (ReFS deletion removes only the row's index slot; the row body persists).
-  Scanned 1125 live pages (orphan-page scan skipped — add --full to also scan the freed pages of older deletions) with recoverable slack rows; 118 split-record file(s) matched a type-0x40 extent map in slack
+  Scanned 1125 live pages (orphan-page scan skipped — add --full to also scan the freed pages of older deletions) with recoverable slack rows; 118 split-record remnant(s) of 72 name(s) matched a type-0x40 extent map in slack
 
   DELETED (no live file with this name + creation time remains on the volume): 349  [300 with valid timestamps, 49 partial remnants]
 

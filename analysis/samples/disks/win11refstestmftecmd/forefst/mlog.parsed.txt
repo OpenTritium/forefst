@@ -1,7 +1,7 @@
 # forefst win11refstestmftecmd.raw mlog --parse
 # ----------------------------------------------------------------------------
 Building OID → path map …
-  251 paths resolved
+  250 paths resolved
 
 ==============================================================================
 MLog Transactions (parsed)

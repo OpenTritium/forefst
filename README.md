@@ -11,6 +11,8 @@ The project consists of:
 
 And if you want a complete introduction to the project: <a href="https://xbpt.gitlab.io/refs/" target="_blank"><strong>xbpt.gitlab.io/refs</strong></a>.
 
+**Known issues in 1.13.1:** the defects that can change what an examiner reports, each with what to do meanwhile — see [docs/tools/forefst.md](docs/tools/forefst.md#known-issues-in-1131).
+
 ## Quick start
 
 The only requirement is **Python 3.7+** (standard library only).

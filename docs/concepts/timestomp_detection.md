@@ -246,7 +246,7 @@ verdict. Timestamp-anomaly information now comes from this subcommand alone.
 forefst.py <image> timestomp                # flagged files, ranked by confidence
 forefst.py <image> timestomp --min HIGH     # only high-confidence suspects
 forefst.py <image> timestomp --json         # machine-readable
-forefst.py <image> timestomp --csv out.csv  # per-file CSV (path, confidence, signals, MACB)
+forefst.py <image> timestomp --csv out.csv  # per-file CSV: path, storage, confidence, signals, evidence_ref, MACB
 forefst.py <image> timestomp --all          # every file with its flags (incl. NONE)
 forefst.py <image> timestomp --margin-days N # anomaly margin (default 1 day)
 ```

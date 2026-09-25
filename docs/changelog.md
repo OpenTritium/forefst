@@ -1,5 +1,126 @@
 # Changelog
 
+## v1.13.1 — 2026-09-25 — a verdict that checked 127 of 55,586, and carves that were real
+
+**Everything here is relative to v1.13.0**, and it corrects two things that release shipped: a verdict
+that claimed more than it had checked, and published evidence that was wrong.
+
+- **`integrity` checks every checksummed cluster, and says "every" only when it has.** On the public sample
+  `win11refstestmftecmd`, 1.13.0 verified **127** clusters and printed "every checksummed file cluster
+  matches"; the volume holds **55,586** checksummed clusters in **189** files, and 1.13.1 checks all of them.
+  Five things kept the rest out of the check, silently: extent rows were stepped by their *size* instead of
+  their 8-byte aligned *step*; a node's slots were walked in order, so a superseded slot could stand in
+  front of the live row; a file whose extent map spans more than one node was read as having none; a
+  hard-linked or moved file's checksums are in its own record, and the check looked at its name instead;
+  and a record stored above the physical cluster count was treated as impossible. The check now reads each
+  node through its key index as extraction does, reports clusters carrying a CRC and clusters checked, prints
+  "every" only when they are equal, and treats any gap as a finding that sets the exit code.
+
+- **Deleted-content recovery gets 14 files back.** The same misstep made the carve path read valid extent
+  maps as broken ones and refuse the files. On that sample recovery goes **258 → 272** files, with **0
+  lost and 0 changed**; the 14 match their live twins where one exists.
+
+- **A prior-version carve says what it zero-filled, on every path — and no longer reads what its row calls
+  unwritten.** When a deleted remnant is an earlier version of a file, a range that version marks
+  unwritten, or held as a sparse hole, is zero-filled, not read: at that moment the file held no data
+  there, and unwritten clusters can hold another file's bytes. One of the three carve paths discarded the
+  row's flags and read those runs anyway, merging whatever the clusters held later into the carve; it now
+  follows the same rule. Nothing is silent: each such file gets a note naming the ranges and how many
+  non-zero bytes lie under them now; `recovery_manifest.json` records `unwritten_runs`, `hole_runs`,
+  `unwritten_zero_filled_bytes`, `unwritten_nonzero_on_disk_bytes` and `refused_all_unwritten`; a carve
+  whose zeros cover data that is on disk now is no longer labelled `confidence: high`; and a carve refused
+  because every run is unwritten says so.
+
+- **`export deleted --carve --later-data`** writes what those zero-filled ranges hold on disk now as a
+  separate `<name>.later` file, at their own offsets and nowhere else. It may be the file's later data or
+  another file's, and it is never merged into the carve. On the public sample, a carve and its `.later`
+  together reproduce every byte the previous carve path produced — 268 remnants, none lost.
+
+- **A public carve oracle ships with the harness.** It checks every carve of the public sample against the
+  file still on the volume with the same name and size, using only files that Windows' own journal —
+  exported on the live system and shipped with the sample — shows were written once and never changed.
+  A carve must equal that file, differ only inside ranges it disclosed, or be refused with a stated
+  reason. 318 carves judged, 0 fail.
+
+- **The v1.13.0 notes about recovered files were wrong, and are corrected.** They described the files
+  1.13.0 stopped recovering as invented bytes and advised against relying on them. Compared with the files
+  still present on the same volume, most of them are exact copies of real content. Files a 1.12.3 carve
+  produced are not made unreliable by this release.
+
+### The findings held at v1.13.0
+
+Fifteen audit findings were held so 1.13.0 could ship; each is now fixed from a failing case, and where the
+audit could not say what the right answer was, the answer comes from a source outside the tool.
+
+- **A file's attributes and allocation come from its own record.** The name row carries a cached copy of
+  both, and the cache goes stale. For a file whose record is split out of its name row (a hard link or a move
+  forces that, and it stays split after the link is removed) `files`, `dataruns`, `reparse`, `export reparse` and
+  `refsanalysis attributes` / `details` now report the attributes of the file's own record; Windows' change journal, which records the attributes the driver holds, agrees with that
+  copy on 79 of 79 names where the two differ and with the cache on none. A row whose size was newer than its
+  allocation (a live SQLite WAL: 3,271,312 bytes "in" 3,211,264) now reports the allocation its extent map
+  covers. `refsanalysis files -v` prints the file's size rather than the name's cached one (202 rows on 44
+  volumes were stale).
+- **Older volumes.** Every embedded file on a v3.4 volume showed "File size: 0 bytes" in `refsanalysis
+  details`; the size is read.
+- **`summary` says what it does not check, and what "free" means.** A report without warnings means the
+  metadata read cleanly; no file's data is read, and `summary` now says so on its last content line. The space
+  line reads *not allocated* instead of *free*: Windows keeps part of that space in reserve and reports less
+  as free. The used figure is unchanged — it equals Windows' own, exactly, where Windows' figure is on record.
+  JSON adds `not_allocated_bytes` / `not_allocated`; the `free*` keys keep their names and value.
+- **A damaged checkpoint no longer looks like a tampered-but-intact one.** A bootstrap copy whose stored
+  self-address was zeroed is re-checked with it restored, and `summary` says whether that was the only damage.
+- **USN `path` labels mean one thing each.** `<oid 0x…>` is a parent whose object is gone; a parent that still
+  exists but has no name — a directory unlinked and not yet reclaimed — is `<unlinked 0x…>` (8,931 records on
+  one real installation). Files in the root now get the leading `/` every other path has.
+- **`timestomp`'s `storage` column says where the data is, and the hard-link check still sees every name.** One
+  flag did both jobs: it printed the column and decided which rows the hard-link comparison skips. A small
+  hard-linked file whose bytes are stored inline in its own record printed `(extents)` — 1,641 rows on 31
+  volumes. The column now follows the same residency test as `files`, and the comparison groups a file's
+  names by how its record is stored instead, so no group is lost: every verdict is unchanged over 482,425 rows.
+  `refsanalysis files` prints `(inline)` / `(extents)` for the same rows. Both now use all five words `files` uses —
+  a snapshot-shared or unallocated stream is no longer shown as `(extents)` — and so do the `Storage:` lines of
+  `refsanalysis attributes` and `details`, which said RESIDENT / NON-RESIDENT from the same flag and now name the
+  data residency and the record placement separately; `attributes` counts "Inline files" as `summary` does.
+- **`timeline --oid` means the same thing in every source, and `--fileref` shows one file.** A file's `$SI`
+  timestamps carried no OID, so `--oid` of a directory returned the USN and MLog events of the files created in it
+  but not their timestamps; they are now filed under the file's home directory, as its USN events are, and the
+  text header says so. A file stays filed there after a move, so `--oid` of its current parent does not select it.
+  `--fileref HOME:ID` keeps one file's `$SI` and USN events under all its names; MLog events name a directory, not
+  a file, and are left out with a note.
+- **`refsanalysis allocators` says "not allocated" per tier too**, as the volume line does.
+- **`--csv -` / `--json -` mean standard output in every command**, as documented. Commands that share the
+  output-format parser (`timeline`, `timestomp`, `specials` among them) rejected the `-`.
+- **`timestomp`'s screen view counts the INFO rows it hides.** The trailer read "0 MEDIUM + 0 LOW row(s) hidden"
+  while hiding every INFO row (95 on one sample volume); it now counts them and names `--min INFO`, which shows
+  them (INFO ranks below LOW, so `--min LOW` does not).
+- **Smaller corrections.** A bare close reads `CLOSE` in both USN renderers and an unrecognised reason bit is
+  shown, not dropped; `export resident-all` counts what it did not write by reason — an empty file as empty and a
+  file whose bytes are in extents as non-inline, whatever its record's placement; `refsanalysis details` prints the
+  FileRef `files` prints (for an embedded file whose data is in extents it printed two unrelated fields and a false
+  "relocated" line) and finds the file however the path is typed; `details` of a directory gives each child's data
+  residency and its own record's attributes, as `files` does; a symlink extracted as 0
+  bytes says it is a reparse point and where it points; the journal's skipped-bytes warning counts bytes, not
+  words, including the ones it used to step past, and unwritten ring space is reported as a note about the data,
+  not as skipped work; the root directory's own USN records read `/`; the `deleted` slack line counts remnants
+  and the names they belong to ("N split-record remnant(s) of M name(s)"); an alternate data stream is no longer listed as a snapshot's current version; the directory path map
+  no longer contains one file per volume and reaches the full depth the listing does; forefst and refsanalysis
+  share one directory walker, which terminates on a cyclic tree. The shipped sample bundles are regenerated from
+  this release; the 1.13.0 bundles carried an empty `timestomp.csv` (its command was one the CLI rejects).
+
+**Known issues.** Defects found while planning 1.14 are in this release and in 1.13.0; they are listed, with what to do meanwhile, in [tools/forefst.md — Known issues in 1.13.1](tools/forefst.md#known-issues-in-1131).
+
+**Output that changes** (the columns and keys do not): `integrity --checksums` figures on every volume with
+integrity streams; `files` `FileAttributes` on some split records and `AllocatedSize` on stale-cache rows; `usn` `path` for unlinked parents and root files; the `summary`
+space line and one new line; `timestomp` `storage` on split files whose data is inline and on snapshot-shared or
+unallocated streams; `timeline` `oid` on file `$SI` rows (it was blank) and a new `--fileref`; `refsanalysis files`
+labels (`(inline)` / `(extents)`) and `-v` sizes on hard-linked names; `dataruns` `attrs=`, `reparse` /
+`export reparse` `Attrs`, and `refsanalysis attributes` `Attributes:` on split records; the `Storage:` line and
+summary count of `refsanalysis attributes` and the `Storage:` line / JSON `storage` of `refsanalysis details`;
+the `deleted` slack line; `mlog --parse` "paths resolved" (one fewer: the bogus path-map key is gone); the
+`refsanalysis summary++` space lines; the `timestomp` screen trailer; the `export resident-all` summary
+counts; `details` of a directory (`Record` / `Storage` / `File attrs` per child); `refsanalysis details`
+`FileRef` on embedded files; the `refsanalysis summary` Files line wording (`inline + extent-backed`).
+
 ## v1.13.0 — 2026-09-22 — the audit response: wrong bytes, wrong verdicts, and the checks that could not fail
 
 **Everything here is relative to v1.12.3**, and it is the largest correctness release so far. It answers
@@ -61,14 +182,9 @@ returns 0.
   121 undamaged images**, and a file on an intact page of a damaged volume still extracts silently at
   rc 0.
 
-- **Deleted-content recovery refuses two kinds of invented bytes.** A carve whose extents lie entirely
-  under sparse holes produces **no file** instead of one filled with whatever those clusters happen to
-  hold; and an extent table is walked by each row's **declared length** rather than a fixed 24-byte
-  stride, so misaligned bytes are no longer read as extent rows. On one corpus volume the old behaviour
-  produced 111 files this way — 95 hole-sourced, 14 from a misaligned walk whose cluster counts summed to
-  exactly the file's allocation **by coincidence**, satisfying the cover guard. Recovery on that volume
-  goes 362 files → 263, with 12 files newly recovered and 19 corrected; none of the difference is a
-  genuine recovery lost.
+- **Deleted-content recovery no longer reads clusters a prior version never wrote.** A deleted remnant
+  is often an earlier version of a file whose row marks some runs unwritten; those runs are zero-filled
+  rather than read, because unwritten clusters can hold another file's bytes.
 
 ### Evidence that did not exist
 

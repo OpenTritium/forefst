@@ -2,6 +2,138 @@
 
 ReFS forensic analysis tool. `forefst.py` produces comprehensive per-file metadata (CSV / JSON / body file) from a raw disk image — and a full forensic suite on top: the USN journal, the MLog transaction log, super-timelines, timestamp-anomaly detection, file extraction, security descriptors, reparse points, deleted-file recovery, snapshots, integrity checking, and a metadata exporter.
 
+## Known issues in 1.13.1
+
+These are known defects in this release that can change what an examiner reports, each found by measurement or by
+reading the code. All are also in 1.13.0, and all are planned for 1.14. Each item says what the output gets wrong
+and what to do until then.
+
+**Superblock and checkpoints**
+
+- **A superblock copy that fails its self-checksum is not flagged.** The tool falls back to a backup only when the
+  primary's signature is missing, and counts any copy that fails its checksum, primary or backup, as intact:
+  neither `summary` nor `integrity` exits 2 for it or warns about it. `summary` prints `CORRUPT self-reference`
+  when the damage reaches the copy's stored own LCN. When the damage reaches one of the primary's checkpoint
+  references, both commands warn and exit 2, but about a checkpoint at the damaged address (`secondary checkpoint @
+  0x… invalid`, and on stderr `checkpoint (CHKP) not found at LCN 0x…`, which adds only that the superblock's
+  checkpoint pointer may be corrupt); the superblock copy is still listed as intact, and the checkpoint the reference
+  named is not read. When it reaches both, both commands stop with an error and exit 1. So `summary` can print a damaged
+  primary's volume GUID while `integrity` reports PASS. The note that the copies' "payload is identical" is printed without being checked.
+  What to do: under Bootstrap structures in `summary` and `Superblock copies:` in `integrity`, only `checksum OK`
+  means a copy passed its self-checksum; `signature OK` means it failed or could not be checked. If the primary
+  (LCN 0x1e) is not `checksum OK`, read the volume GUID from a copy that is: the 16 bytes at +0x50 of that copy,
+  at the offset its `summary` line prints. They are in GUID byte order (the first 4, 2 and 2 bytes little-endian), so
+  `c7 86 f3 d2 6c 2a 1c 49 ad df …` is `d2f386c7-2a6c-491c-addf-…`.
+- **`integrity` prints superblock offsets from the start of the partition; `summary` prints them from the start of
+  the image.** What to do: add the partition start (`summary`: "partition starts at 0x…") to an `integrity` offset
+  before reading or citing it.
+- **Several displays can describe a checkpoint that failed its checksum**: the Checkpoint section (virtual clock,
+  flags) of `summary` and `fastsummary` and of refsanalysis `summary`/`summary++`, the `Checkpoint VC:` header of
+  `integrity`, the active-checkpoint marker (`*`) of `refsanalysis supb`, and `refsanalysis chkp` without
+  `--verify`. They rank the two copies by clock without checking them, so when the newest copy is damaged they show
+  it while the volume was read from the older, valid one. `refsanalysis containers` reads the Container Table from
+  that unchecked copy, without a warning. What to do: check the two checkpoint lines in `summary` or `integrity`
+  first. The copy in use is the newest one that reads `checksum OK`. The displays above show the copy with the highest clock,
+  so they belong to the copy in use only when that copy reads `checksum OK`; when it does not, they belong to the
+  damaged copy. When both copies carry the same clock and one failed, or when `summary` or `integrity` reports a
+  checkpoint `clock mismatch`, a display may show either copy.
+- **`integrity` labels a checkpoint that failed its self-checksum `valid`** (`summary` labels it `signature OK`).
+  When both copies carry the same clock (both marked `(tied clock)`), a failed `[secondary]` copy draws no warning,
+  and the verdict can be PASS with exit 0. What to do: go by each checkpoint's own line; only `checksum OK` means it passed.
+- **`deleted`'s checkpoint comparison, and the checkpoint hash in `summary` and `fastsummary`, rank the copies by
+  the page-header clock (+0x10) without checking them.** When the newest checkpoint failed its checksum, `deleted`
+  compares the older copy with itself and reports `Same top-level files in both`; when the older copy failed, it
+  compares against that damaged copy without a warning. When both copies carry the same clock, or a copy's two
+  clocks disagree, the hash on the `CHKP primary` line can be the other copy's. What to do: ignore the comparison
+  unless both checkpoint lines read `checksum OK`, and hash a copy yourself (max(16 KiB, cluster size) bytes at the
+  offset its `summary` line prints) before recording its hash.
+- **`refsanalysis supb --verify` checks neither the superblock's self-checksum nor the checkpoints', and examines
+  only the primary copy**: its checkpoint rows read OK over a corrupt checkpoint. Neither it nor `boot --verify`
+  exits non-zero when a row reads FAIL. What to do: read the Result column, not the exit status, and take each
+  superblock and checkpoint copy's checksum state from its own line in forefst `integrity` (only `checksum OK`
+  passed).
+- **refsanalysis exits 0 after skipping metadata it could not read, and its `summary` prints an unreadable table as
+  `0 rows`**, sometimes with no warning at all. It prints an all-zero volume GUID when the primary superblock was
+  lost. The `refsanalysis <image> forefst <cmd>` passthrough keeps a command's own exit 2 (such as `integrity`'s
+  verdict) but not the exit 2 that `forefst.py` adds for skipped metadata or a volume finding, so it can exit 0 where
+  `forefst.py` itself exits 2 (for example `summary` on a volume with a damaged checkpoint). What to do: before
+  taking a refsanalysis count, a `0 rows` or a GUID as evidence, run `forefst.py <image> summary` directly (not
+  through the passthrough); it marks such a table `unreadable` and exits 2. Check its volume GUID as the first item
+  in this group says.
+
+**Coverage of the checks**
+
+- **`integrity --checksums` verifies the system tables and the root page of each object, not every metadata page,
+  yet a clean run says "no tampering/corruption".** What to do: use `--fullchecksums` before stating that the
+  metadata is intact, and note that even it does not verify the child pages below a file's extent index or below
+  its embedded attribute index (files with many extents, or with many attributes and streams); `--verify-pages`
+  does not check them either.
+- **The Container Table is not checked for internal consistency** (two containers mapped to the same clusters, a
+  mapping to clusters that hold no container), so a damaged table is read as normal by `summary`, by `integrity`
+  without `--checksums` and by every command that reads through it. What to do: run `integrity --checksums`
+  before relying on address translation; it verifies the Container Table's pages. A table rewritten with
+  re-computed checksums cannot be detected from the volume alone.
+- **Sizes and scan ranges come from the image's length, not the volume's.** On a disk image, the space after the
+  volume (another partition, unpartitioned space) is counted as this volume's: `summary` reports it as space beyond
+  the last container, and the orphan-page scan of `deleted --full` and `--scan-pages` reads it. A truncated image
+  is reported only as missing backup copies. What to do: in `summary --json` the volume ends at `partition_start`
+  + `volume_size_bytes`; an `image_size` below that is a truncated image, and bytes above it are not this volume's.
+  A `deleted` remnant at cluster `volume_size_bytes` ÷ `cluster_size` or beyond lies outside the volume.
+- **An MLog whose newest records were destroyed reads as healthy.** What to do: do not take a clean `mlog --stats`
+  as evidence that the log is complete.
+- **`mlog` labels the control header's +0x18 `LSN oldest`**, but on the volumes measured it is the log's tail.
+  What to do: do not report `LSN oldest` as the oldest record's position.
+- **`summary`'s extent-backed file count includes snapshot-shared and unallocated files.** What to do: count by
+  `DataResidency` in `files --csv`.
+
+**USN journal and timestamps**
+
+- **A re-created USN journal is reported as destroyed.** When the journal was deleted and created again,
+  `usn --info`, `timeline` and `timestomp` report the previous journal's tail as destroyed (`timestomp` says
+  truncated) and exit 2. `usn` then lists the new journal's records together with any of the old journal's records
+  still in `$J`, so timestamps can run backwards in USN order. What to do: compare `USN Journal ID` in `summary`
+  (the journal the files' own records point to) with `Journal ID` in `usn --info` (the current journal). If they
+  differ, the journal was re-created, administratively or to hide activity: report that, not the DESTROYED figure,
+  which is measured against pointers the earlier journal wrote. If they match, compare `Journal ID` with the value
+  recorded for this volume in an earlier image or collection; without one, report "journal re-created or its tail
+  destroyed", not either one alone.
+- **`timestomp`'s FUTURE signal compares a file's creation time with a volume timestamp whose meaning is not
+  established** (`$VOLUME_INFORMATION`+0xA0, printed as `Volume modified`), although the output calls it the
+  volume's last metadata write, and FUTURE alone makes a row MEDIUM. What to do: ignore FUTURE. A MEDIUM row whose
+  other signals are only `CREATE_GT_MODIFY` or `ROUND_TIMESTAMPS` is MEDIUM because of FUTURE alone: judge it as
+  INFO, or as unflagged when FUTURE is its only signal.
+
+**Deleted files and carving**
+
+- **`deleted` lists the old name of a renamed file as a deleted file**: a remnant counts as deleted when no live
+  file anywhere on the volume has the same name and creation time, and a rename changes the name. What to do:
+  before reporting a deletion, look the name up in `usn --csv`, take the `file_ref` of its `RENAME_OLD_NAME` or
+  `FILE_DELETE` record, and read that `file_ref`'s last record: `FILE_DELETE` means the file was deleted; a
+  `file_ref` that is a live `ObjectRef` in `files --csv` means the remnant is that file's former name. Without a
+  journal record, report "deleted, or renamed". Do not decide it by matching creation times: `deleted` prints them
+  to the second, and files created together share a second.
+- **A carve can be shorter than the file declares, or zero-filled where the recovered extent map has a gap,
+  without a note**, and a record whose `reliability` is `BEST-EFFORT` can end with no `.carved` file. What to do: in
+  `recovery_manifest.json` (`export deleted DIR --carve`), a record whose `carved_len` is below
+  `carved_declared_size` was cut short; a record whose `reliability` is `BEST-EFFORT` and whose `content_file` is null produced no carve. Equal
+  lengths do not prove a complete carve: check a `.carved` file for cluster-sized runs of zeros that
+  `unwritten_runs` and `hole_runs` do not list before relying on those bytes.
+- **Carved integrity-stream data is not checked against its CRC.** `export deleted --carve` (and `--full`, which
+  implies it) writes the clusters of an integrity-stream file without verifying their per-cluster CRC32-C. What to
+  do: treat such a carve like any other best-effort carve; the clusters may have been reused.
+- **`deleted` says it carves, but only `export deleted DIR` does**: the `--full` footer lists "+ carve", and
+  `deleted --carve` is accepted and does nothing. What to do: report carved content only from a `.carved` file in
+  an `export deleted` directory.
+- **A read error during the slack or orphan-page scan of `deleted` is skipped without a note** (also with `--full`,
+  `--scan-pages` and `export deleted`); the printed coverage does not drop and the exit code does not change. What to do:
+  if the image is read through anything that can return I/O errors (a mounted E01, network storage, a failing
+  disk), confirm it reads end to end, for example by hashing it, before treating "not found" as absence.
+- **Bulk exports rename a name that collides with an existing file to `.dupN`, and only `export deleted` records
+  the new name** (`content_file` in `recovery_manifest.json`). `export resident-all` and `export recyclebin` write no
+  index of the renames, and `export metadata` into a directory that already holds a bundle writes `.dupN` files
+  while its `manifest.json` and `sha256sums.txt` name the old ones. What to do: export into a new, empty directory
+  each time; match a `.dupN` file of `export resident-all` or `export recyclebin` to its source by SHA-256.
+
 ## Invocation
 
 ```sh
@@ -42,7 +174,7 @@ forefst.py disk.raw security --audit                  # tamper-check security de
 
 ### `files` — list files and directories
 
-Walks the directory B+-tree from the root object (OID `0x600`) and emits one enriched row per file/directory. Default output is the 40-column CSV described [below](#csv-output-fields).
+Walks the directory B+-tree from the root object (OID `0x600`) and emits one enriched row per file/directory. Default output is the 40-column CSV described [below](#csv-output-fields). It reads metadata only — no file's data — see [what `summary` does not examine](#summary--full-volume-triage-report).
 
 | Option | Description |
 |--------|-------------|
@@ -76,7 +208,7 @@ forefst.py disk.raw files --body -o t.body            # body file (live tree); d
 
 ### `summary` — full volume triage report
 
-Volume identity (version, GUID/label, cluster/container size, checksum type); a **Bootstrap structures** section listing the VBR (primary + backup), SUPB (primary + 2 backups) and CHKP (primary + backup) — each with its address, validity, and its own SHA-256; on-disk state (original / upgraded / native); the 13 root-table row counts; USN-journal status + UsnJournalId; a **Space used** line — real free-vs-used space taken from the accounting ReFS maintains in the allocator's own root page, with the tail of the volume past the last container reported separately because it belongs to no allocator tier and is not free space (`refsanalysis.py <image> allocators` shows the tiers behind it); then a full directory walk for file/dir/inline-data counts, total size, MACB extremes, and encrypted/integrity/compressed/hard-link/snapshot/ADS tallies. Extended by default.
+Volume identity (version, GUID/label, cluster/container size, checksum type); a **Bootstrap structures** section listing the VBR (primary + backup), SUPB (primary + 2 backups) and CHKP (primary + backup) — each with its address, validity, and a SHA-256 (see Known issues: the primary checkpoint's can be the other copy's; and when the primary superblock is unreadable, the hash on the `SUPB primary` line is that of the backup copy the volume was read from); on-disk state (original / upgraded / native); the 13 root-table row counts; USN-journal status + UsnJournalId; a **Space used** line — the used space from the accounting ReFS maintains in the allocator's own root page, which equals Windows' own figure (`fsutil fsinfo refsinfo`: total − free − reserved), and the rest reported as *not allocated*, not as free, because Windows holds part of it in reserve and reports less as free, with the space from the last container to the end of the image reported separately, because it belongs to no allocator tier and is not free space (on a disk image it can lie outside the volume: see Known issues) (`refsanalysis.py <image> allocators` shows the tiers behind it); then a full directory walk for file/dir/inline-data counts, total size, MACB extremes, and encrypted/integrity/compressed/hard-link/snapshot/ADS tallies. Extended by default.
 
 | Option | Description |
 |--------|-------------|
@@ -89,6 +221,16 @@ forefst.py disk.raw summary                           # text triage report
 forefst.py disk.raw summary --json                    # one JSON object
 forefst.py disk.raw summary --hash-image              # + full-image SHA-256
 ```
+
+**What `summary` does not examine: file contents.** Everything after the bootstrap section is read from
+metadata — directory rows, the allocator's accounting, the root tables. No file's data is read, so a report
+without warnings says the metadata read cleanly and nothing about whether file contents are intact: a file
+whose clusters were zeroed or overwritten is listed exactly as before. The same holds for `files`, `search`,
+`details`, `dataruns`, `specials`, `reparse`, `security`, `timestomp`, `timeline` and the `refsanalysis`
+listings. Two things can be checked. `integrity` verifies the stored checksum of every file that carries an
+integrity stream (`HasIntegrity`); a file without one has no checksum on the volume, so damage to its data
+cannot be detected from the image. And `extract` and the `export` modes report the ranges an image stores as
+holes (below).
 
 ### `search` — find files/directories by name  *(alias: `find`)*
 
@@ -201,7 +343,8 @@ actually destroyed.
 | `--csv` | emit CSV to stdout (`timestamp_utc,source,oid,name,event`) |
 | `--source S` | keep only one source: `USN` / `MLOG` / `SI` |
 | `--file SUB` | keep events whose name/path contains SUB |
-| `--oid O` | keep only events for object O (0x hex or decimal) |
+| `--oid O` | keep the events filed under object O (0x hex or decimal): a directory's own events and those of the files created in it. The `oid` column says where each event is filed — a directory's own OID, a file's **home directory** (the first half of its FileRef) in `$SI` and USN alike, and for MLog the directory whose tree the transaction changed. A file stays filed under its home directory after it is moved, or named again by a hard link elsewhere, so `--oid` of its *current* parent does not select it; use `--fileref` or `--file` for one file |
+| `--fileref H:F` | keep one file's events, by its FileRef (`HomeOID:FileID`, as `files` prints `ObjectRef`): its `$SI` timestamps under every name, and its USN records. MLog events name a directory, not a file, and are left out — with a note saying so |
 | `--limit N` | keep only the first N events after filtering/sorting |
 | `--depth N` | max recursion depth for the $SI walk (default: full) |
 
@@ -209,7 +352,8 @@ actually destroyed.
 forefst.py disk.raw timeline --fast --limit 50         # quick USN+MLog timeline
 forefst.py disk.raw timeline --csv > timeline.csv      # full super-timeline (CSV)
 forefst.py disk.raw timeline --file hello.txt          # events touching one file
-forefst.py disk.raw timeline --source USN --oid 0x701  # one object's USN history
+forefst.py disk.raw timeline --source USN --oid 0x701  # USN events of directory 0x701 and of the files created in it
+forefst.py disk.raw timeline --fileref 0x701:0x2        # one file's $SI and USN history
 ```
 
 ### `timestomp` — timestamp-anomaly detection
@@ -219,13 +363,13 @@ Flags timestamp tampering by comparing intrinsic $SI MACB against USN-journal ev
 | Option | Description |
 |--------|-------------|
 | `--all` | include every file, even those with no anomaly |
-| `--min LEVEL` | lower the screen view's confidence floor: `HIGH` / `MEDIUM` / `LOW` (default: HIGH-only) |
+| `--min LEVEL` | lower the screen view's confidence floor: `HIGH` / `MEDIUM` / `LOW` / `INFO` (default: HIGH-only). INFO ranks below LOW, so only `--min INFO` shows it |
 | `--margin-days N` | comparison tolerance in days (default 1) |
-| `--csv [FILE]` / `--json [FILE]` | machine output (exports ALL tiers unless `--min` is explicit); `--csv -` → stdout |
+| `--csv [FILE]` / `--json [FILE]` | machine output (exports ALL tiers unless `--min` is explicit); no FILE or `-` → stdout. CSV columns: `path,storage,confidence,signals,evidence_ref,created,modified,changed,accessed` |
 | `--depth N` | max recursion depth (default: full) |
 
-The default screen view shows **HIGH-confidence rows only**, with a trailer noting the lower tiers; `--min
-MEDIUM` / `--min LOW` reveals them. The CSV/JSON exports include every tier unless you pass `--min`.
+The default screen view shows **HIGH-confidence rows only**, with a trailer counting the lower tiers; `--min
+MEDIUM`, `--min LOW` or `--min INFO` reveals them. The CSV/JSON exports include every tier unless you pass `--min`.
 
 **What each signal means, and how often it fires.** Base rates measured over the **full corpus — 96 volumes /
 521,060 files**. Read them as a floor, not as a typical volume: the corpus is mostly small purpose-built lab
@@ -240,8 +384,13 @@ files, because that is what installing an operating system looks like.
 | `CHANGE_LATE` | change time post-dates create/modify | 21.83 % | MEDIUM **only without** `PRE_FORMAT` |
 | `PRE_FORMAT` | created before this volume existed | 22.17 % | **INFO** (ambiguous — see below) |
 | `CREATE_GT_MODIFY` | created after the last write | 1.69 % | **INFO** |
-| `FUTURE` | created after the volume's last metadata write | 4 files | MEDIUM |
+| `FUTURE` | created after the volume timestamp printed as `Volume modified`, whose meaning is not established (see Known issues) | 4 files | MEDIUM — do not report on its own |
 | `ROUND_TIMESTAMPS` | whole-second Created **and** Modified | — | never lifts a tier |
+
+The hard-link comparison takes a file's names from its **record**: only a record split out of its name row
+can carry a second name, so those are grouped by their FileRef. Each row's `storage` column is the file's
+**data** residency — `(inline)` or `(extents)`, the same test as `files`' `DataResidency` — and is independent
+of the grouping, and uses the same five words: `(inline)`, `(extents)`, `(snapshot-shared)`, `(unallocated)`, `(unknown)`.
 
 **Why `PRE_FORMAT` and `CHANGE_LATE` together are INFO — ambiguous, not cleared.** A timestamp-preserving
 copy (`robocopy /COPY:T`, a restore, an archive extraction) writes the original create/modify — before this
@@ -285,6 +434,8 @@ forefst.py disk.raw timestomp --csv suspects.csv       # export ALL tiers to CSV
 ### `extract` — extract a file's content (or one ADS)
 
 Recovers a file's bytes and writes them to stdout (redirect to a file): **extent-backed** files from their extents — whether the extent map is held **inline** in the directory record (the common 3.14 case, listed as `DataResidency=extents`) or in a separate record — **inline** files from the `$DATA` bytes in the record — including a file whose record was split out of its name row by a move or a hard link but whose bytes stayed inline inside that record — and **snapshot-shared files unmodified since a snapshot** from the blocks they share with the latest snapshot. Address by bare name, absolute `/path`, or `--path`; use `name:stream` to pull an ADS (a small ADS from its inline bytes, or a large ≥2 KiB ADS reassembled from its on-disk extents). Only a rare oversized/overflow extent table falls back to `dataruns`; a modified-CoW file's prior versions are in `snapshots --extract`.
+
+The bytes written are the bytes the image holds. For a file without an integrity stream nothing on the volume says what they should be, so zeroed or overwritten content comes out as it is, with exit 0; `integrity` checks the files that do carry one.
 
 **Bytes that came from image holes are reported, not withheld.** Raw images are stored sparsely — this
 project's corpus is 55 TB apparent against 58 GB allocated — and a sparse image stores a file's **own zero
@@ -443,21 +594,21 @@ forefst.py disk.raw reparse --tag 0xa000000c --json    # only symlinks, as JSON
 
 The slack scan **runs by default**; `--no-slack` gives a fast Trash+checkpoint pass and `--trash` returns after the Trash table only; filter with `--search SUB`.
 
-**What each depth costs.** `deleted` and the metadata-only flags are **fast** (seconds) — they read only pages the tree walk already touches. `--carve` is **moderate**: it reads the data extents of each recovered extent-backed file, so its cost follows how much deleted data you reconstruct. `--full` and `--scan-pages` are **slow** — they read *every cluster on the volume* looking for orphan pages, at the disk's sequential read speed: on a 1–2 GB/s disk that is about **a minute per 60–100 GB** (≈1 min at 64 GB, ≈20–35 min at 2 TB). Treat a multi-TB volume as **very slow** (≈2.5–4.5 h at 16 TB, with progress printed). These deep scans cover the whole volume **by default** and always print how much of it they examined. `--max-scan N` trades that completeness for speed by stopping after N clusters; a bounded run is reported as **INCOMPLETE** in the output and the recovery log.
+**What each depth costs.** `deleted` and the metadata-only flags are **fast** (seconds) — they read only pages the tree walk already touches. `--carve` is **moderate**: it reads the data extents of each recovered extent-backed file, so its cost follows how much deleted data you reconstruct. `--full` and `--scan-pages` are **slow** — they read *every cluster on the volume* looking for orphan pages, at the disk's sequential read speed: on a 1–2 GB/s disk that is about **a minute per 60–100 GB** (≈1 min at 64 GB, ≈20–35 min at 2 TB). Treat a multi-TB volume as **very slow** (≈2.5–4.5 h at 16 TB, with progress printed). These deep scans cover the whole volume **by default** and print the range they scanned; a range that could not be read is not subtracted from it (see Known issues). `--max-scan N` trades that completeness for speed by stopping after N clusters; a bounded run is reported as **INCOMPLETE** in the output and the recovery log.
 
 **Recoverability verdict.** Every listed entry carries a verdict — computed disk-free by running the *same* inline-`$DATA` decoder used for live files on the captured remnant bytes:
 
 | Verdict | Meaning | `export deleted` writes |
 |---------|---------|--------------------------|
-| `FULL FILE recoverable` | **inline** file — `$DATA` bytes are in the record and decode | `.recovered` (the full file) |
-| `extent_backed` | **extent-backed** file — data is in on-disk extents, and the extent **map** survives in slack (inline in the record, *or* in a type-0x40 backing recovered from the same page slack) | `.carved` **with `--carve`** (best-effort; see below) |
-| `content zero or absent` | the `$DATA` descriptor survived and still declares N inline bytes, and that region reads as zeros — the file held zeros, or the deletion took the bytes, and the remnant cannot separate the two | `.row` only — **no content file** |
-| `metadata only` | extent-backed file with no usable data/extent info in the remnant | `.row` only (name/size/timestamps) |
-| `fragment only` | a Trash-table key/value fragment | `.row` only |
+| `FULL FILE recoverable` | **inline** file — `$DATA` bytes are in the record and decode | `content/<name>` (the full file) |
+| `extent_backed` | **extent-backed** file — data is in on-disk extents, and the extent **map** survives in slack (inline in the record, *or* in a type-0x40 backing recovered from the same page slack) | `content/<name>.carved` **with `--carve`** (best-effort; see below) |
+| `content zero or absent` | the `$DATA` descriptor survived and still declares N inline bytes, and that region reads as zeros — the file held zeros, or the deletion took the bytes, and the remnant cannot separate the two | an index row only — **no content file** |
+| `metadata only` | extent-backed file with no usable data/extent info in the remnant | an index row only (name/size/timestamps) |
+| `fragment only` | a Trash-table key/value fragment | an index row only |
 
-The verdict is annotated for EFS (`CIPHERTEXT`), sparse (`short read expected`), and partial slack remnants (`corroborate`). "Recoverable" means the bytes (or their extent map) are **present** in the remnant, *not* that they are un-overwritten (there is no allocation/freshness check). A deletion can leave the descriptor while taking the bytes. When that has happened the declared region reads as zeros — but so does a file that genuinely held zeros, and **nothing in the remnant separates the two**, which is why the verdict names both and the tool writes no content file either way. A file of real zeros is therefore withheld as well; that is rare (measured at roughly one live file with inline data in several thousand) and the trade is deliberate — the record, name, size and timestamps are still reported, and an evidence tool should not hand you bytes it never read, nor assert which of two explanations produced them. A roll-up at the end splits **deleted files** from **prior versions of files still present** — decided per **owning directory** (a row is a prior version only if its owning directory is still live *and* still holds that exact name), so a real deletion is never hidden by a same-named file living in some other directory. The counts reconcile exactly with the files `export deleted` writes.
+The verdict is annotated for EFS (`CIPHERTEXT`), sparse (`short read expected`), and partial slack remnants (`corroborate`). "Recoverable" means the bytes (or their extent map) are **present** in the remnant, *not* that they are un-overwritten (there is no allocation/freshness check). A deletion can leave the descriptor while taking the bytes. When that has happened the declared region reads as zeros — but so does a file that genuinely held zeros, and **nothing in the remnant separates the two**, which is why the verdict names both and the tool writes no content file either way. A file of real zeros is therefore withheld as well; that is rare (measured at roughly one live file with inline data in several thousand) and the trade is deliberate — the record, name, size and timestamps are still reported, and an evidence tool should not hand you bytes it never read, nor assert which of two explanations produced them. A roll-up at the end splits **deleted files** from **prior versions of files still present**: a remnant is a prior version when a live file anywhere on the volume has the same name and creation time (the recovery log marks one found in another directory as a former location). The INLINE and extent-backed figures count verdicts, not the files `export deleted` writes: a 0-byte inline file, and an extent-backed file whose carve is refused or fails, get no content file. Count the deleted files' recovered content by `ContentFile` in `deleted_files.csv`, not by `content_file` in `recovery_manifest.json`: the manifest also lists the prior versions of live files, with their content files, and nothing in a slack-scan record tells the two apart. Entries found by the orphan-page scan (`--scan-pages`) are not in `deleted_files.csv`; in the manifest they are the records whose `source` is `orphan-scan`, the deleted ones with `tag` `del`.
 
-> **Inline vs extent-backed — what you can restore.** An **inline** deleted file's *full content* is recovered straight from the remnant (`.recovered`). An **extent-backed** file keeps its data in separate on-disk extents — but the *extent map* survives in slack (either inline in the record, or in the file's type-0x40 backing record, which is unlinked from the live tree at deletion yet whose body persists in the same page slack and is matched back to the name by `file_id`+size), so `export deleted --carve` reconstructs the file from those clusters **best-effort** (they may have been reallocated — the output is labelled `.carved` and flagged in the manifest). Only when even the extent map has been zeroed in the surviving remnant (`metadata only`) is nothing but the record recoverable here. A complementary, not-yet-implemented method — **whole-disk signature carving** (scan every cluster for file magics, filesystem-agnostic) — would recover those remaining cases.
+> **Inline vs extent-backed — what you can restore.** An **inline** deleted file's *full content* is recovered straight from the remnant (`content/<name>`). An **extent-backed** file keeps its data in separate on-disk extents — but the *extent map* survives in slack (either inline in the record, or in the file's type-0x40 backing record, which is unlinked from the live tree at deletion yet whose body persists in the same page slack and is matched back to the name by `file_id`+size), so `export deleted --carve` reconstructs the file from those clusters **best-effort** (they may have been reallocated — the output is labelled `.carved` and flagged in the manifest). Only when even the extent map has been zeroed in the surviving remnant (`metadata only`) is nothing but the record recoverable here. A complementary, not-yet-implemented method — **whole-disk signature carving** (scan every cluster for file magics, filesystem-agnostic) — would recover those remaining cases.
 
 | Option | Description |
 |--------|-------------|
@@ -466,6 +617,7 @@ The verdict is annotated for EFS (`CIPHERTEXT`), sparse (`short read expected`),
 | `--scan-pages` | ALSO scan orphaned metadata pages across the whole volume (**slow** — see the cost note above) |
 | `--slack` | run the slack scan (already the default; kept for symmetry) |
 | `--carve` | with `export deleted`: also reconstruct extent-backed files |
+| `--later-data` | with `--carve`: a range an earlier version marks **unwritten**, or held as a hole, is zero-filled in the carve (that version held no data there); this **also** writes what those clusters hold now to a separate `content/<name>.later`. It may be the file's later data or another file's, and it is never merged into the carve. Every such range is listed in `recovery_manifest.json` (`unwritten_runs`, `hole_runs`) |
 | `--search SUB` | filter recovered entries by name substring |
 | `--max-scan N` | stop the orphan-page scan after N clusters. Default: **no limit** — the whole volume is scanned. Bounding it makes the run faster but **INCOMPLETE** |
 | `--extract DIR` | **deprecated** — use `export deleted DIR` (identical result) |
@@ -513,13 +665,15 @@ forefst.py disk.raw snapshots --extract ./recovered --depth 12
 
 ### `integrity` — verify metadata-page checksums
 
-Structural audit of metadata pages. Default is a fast verdict; `--checksums` verifies the system root tables, `--fullchecksums` extends to every object B-tree (CRC64 or SHA-256).
+Structural audit of metadata pages. Default is a fast verdict; `--checksums` verifies the system root tables (Container-Table child pages included) and the root page of every object, `--fullchecksums` extends to every object B-tree (CRC64 or SHA-256) except the child pages below a file's extent index or embedded attribute index.
+
+With `--checksums` it also verifies every file that carries an **integrity stream**: each checksummed cluster is read and its CRC-32C compared with the one the volume stores. It reports the clusters carrying a CRC and the clusters checked — counted per file, so block-cloned copies that share physical clusters each count theirs — and says "every … matches" only when every cluster carrying a CRC was checked, apart from any the output says were never checksummed by the driver, and no file or subtree of an extent map was left out; anything short sets the exit code and is reported with a count, naming only the first five files it affects (`--json` does not include this section). A file without an integrity stream has no checksum on the volume and cannot be checked this way.
 
 | Option | Description |
 |--------|-------------|
 | `-v, --verbose` | per-page details (capped 200) |
-| `--checksums` | verify the system root tables' checksums |
-| `--fullchecksums` | verify every object B-tree (implies `--checksums`) |
+| `--checksums` | verify the system root tables' checksums and each object's root page |
+| `--fullchecksums` | verify every object B-tree except the child pages below a file's extent index or embedded attribute index (implies `--checksums`) |
 | `--scan-range A-B` | raw mode: inspect each LCN in the range standalone |
 | `--max-pages N` | cap the checksum crawl (default 300000) |
 
@@ -551,13 +705,13 @@ forefst.py disk.raw integrity --fullchecksums -v       # full sweep + page detai
 | `export reparse` \[`--json`\] \[`-o FILE`\] | the reparse-point inventory (decoded targets/tags/kind) — text by default (same as `reparse`), or `--json` — stdout or `-o` |
 | `export resident-all [dir]` | every file's inline `$DATA` to a folder, tree preserved (skips 0-byte / non-inline) |
 | `export snapshots [dir]` | every stream-snapshot version — same as `snapshots --extract` (aliases: `snapshot`, `prior-versions`) |
-| `export deleted [dir] [--carve] [--rows-only\|--content-only]` | recover deleted remnants — the raw `.row` **and** the decoded `.recovered` (inline); with `--carve` also `.carved` (extent-backed), plus a `recovery_manifest.json` |
+| `export deleted [dir] [--carve] [--rows\|--rows-only]` | recover deleted remnants — an index (`deleted_files.csv`/`.json`), the decoded inline files in `content/`, with `--carve` also `.carved` files (extent-backed), a `recovery_manifest.json` and a recovery log; the raw `.row` remnants only with `--rows` or `--rows-only` |
 | `export recyclebin [dir]` | surviving `$R` payloads, named by their decoded original filename |
 | `export metadata -o <dir>` | the hash-verified metadata bundle (`--what vbr,chkp,supb,mlog,usn,btree` · `--btree-mode packed\|per-object` · `--max-scan N`) |
 | `<bundle-dir> <subcommand>` | read a bundle back — pass the directory where you would pass an image; see [metadata bundles](../concepts/metadata_bundles.md) |
 | `<bundle-dir> verify-bundle` | check a bundle is whole (seal, manifest, indexes, rehydration); exit 0 whole, 2 not |
 
-**`export deleted` writes, per entry, by default:** the raw **`.row`** (the recovered directory-entry record, verbatim — chain-of-custody evidence) and, for a file whose inline `$DATA` decodes, the **`.recovered`** file (the full reconstructed content). With **`--carve`**, an **extent-backed** entry also gets a **`.carved`** file — reassembled from the extent map held inline in the record (validated byte-exact on a known live extent-backed file; **best-effort** for deleted files because the clusters may have been reallocated, and sparse files short-read — both flagged in the manifest). The distinct `.recovered`/`.carved` extensions mark carved remnants, never verbatim live copies. Files never clobber — a collision auto-renames to `.dup1`/`.dup2`. `--rows-only` reproduces the historical raw-row-only output byte-for-byte; `--content-only` writes just the decoded bytes (drops the evidence — used with a warning). A `recovery_manifest.json` stamps every entry (source, cluster, confidence, verdict, sizes).
+**`export deleted DIR` writes, by default:** an index, `deleted_files.csv` and `deleted_files.json`, with one row per entry (its `ContentFile` column names the file written for it, if any); for a file whose inline `$DATA` decodes, the full content as **`content/<name>`**; a **`recovery_manifest.json`** that stamps every entry (source, cluster, confidence, verdict, sizes), a `recovery_log.txt` and a `holes.json`. With **`--carve`**, an **extent-backed** entry also gets a **`content/<name>.carved`** file unless its carve is refused or fails (see Known issues) — reassembled from the extent map held inline in the record (validated byte-exact on a known live extent-backed file; **best-effort** for deleted files because the clusters may have been reallocated, and sparse files short-read — both flagged in the manifest). Files never clobber — a collision auto-renames to `.dup1`/`.dup2`. The raw **`.row`** remnants (the recovered directory-entry records, verbatim — chain-of-custody evidence) are written to `rows/` only with `--rows`, or with `--rows-only`, which writes them and the index without any content. `--content-only` is accepted and changes nothing: content without rows is the default.
 
 > Not yet implemented: **whole-disk signature carving** (scan every cluster for file magics) would recover the `metadata only` cases where even the extent map is gone.
 
@@ -567,7 +721,7 @@ forefst.py disk.raw export ads "notes.txt:hidden"                # one ADS to th
 forefst.py disk.raw export reparse --json -o reparse.json        # the reparse inventory as JSON (omit --json for text)
 forefst.py disk.raw export snapshots                             # every snapshot -> auto-timestamped folder
 forefst.py disk.raw export resident-all ./resident/              # bulk-carve every file whose bytes are inline
-forefst.py disk.raw export deleted ./rec/ --carve                # deleted rows: .row + .recovered + .carved + manifest
+forefst.py disk.raw export deleted ./rec/ --carve                # index + content/ (inline, .carved) + manifest
 forefst.py disk.raw export recyclebin ./recovered/              # recover the recycle-bin payloads
 forefst.py disk.raw export metadata -o ./bundle/                 # metadata bundle (= the old `export`)
 ```
@@ -610,15 +764,10 @@ forefst.py disk.raw dataruns --oid 0x705 -v            # scope to one subtree
 
 The `files` CSV has **40 columns**, one row per file/directory, in this order (matching `CSV_COLUMNS` in `forefst.py`):
 
-> **These 41 header names are frozen for the whole 1.10 line.** Every header is a plain identifier — no
-> slash, space or bracket — so a consumer can key on it (`df["HomeOID"]`, a Timeline Explorer
-> column filter). **No header will be renamed, added, removed or reordered in any 1.10.x release**, so a
-> script written against this table stays correct for the line.
->
-> Coming from **v1.9**, exactly one name changed: its `OID` and `FileRef` columns are now the single
-> `ObjectRef`. `RecordPlacement` and `DataResidency` are new. Every other v1.9 name is unchanged,
-> `HomeOID` included. The `--json` output is unaffected and always has been — it
-> uses its own snake_case keys (`id`, `oid`, `file_ref`, …), not these names.
+> Every header is a plain identifier — no slash, space or bracket — so a consumer can key on it
+> (`df["HomeOID"]`, a Timeline Explorer column filter). A change to a name, the count or the order is
+> listed as **breaking** in the [changelog](../changelog.md), with what a consumer must do. The `--json`
+> output uses its own snake_case keys (`id`, `oid`, `file_ref`, …), not these names.
 
 | # | Column | Description |
 |---|--------|-------------|
@@ -626,7 +775,7 @@ The `files` CSV has **40 columns**, one row per file/directory, in this order (m
 | 2 | FullPath | full path from root (ParentPath + FileName) |
 | 3 | FileName | file or directory name |
 | 4 | Extension | file extension, **in the case it has on disk** (`.SYS` stays `.SYS`) — a forensic listing reports the name as stored, not a normalised form. Blank when the suffix after the last dot is longer than 10 characters, which is treated as not an extension |
-| 5 | FileSize | logical file size in bytes |
+| 5 | FileSize | logical file size in bytes — the `$DATA` stream's own size where the directory's cached copy of it disagrees |
 | 6 | Created | $SI creation timestamp |
 | 7 | Modified | $SI modification timestamp |
 | 8 | Changed | $SI metadata-change timestamp (MFT-equivalent) |
@@ -637,7 +786,7 @@ The `files` CSV has **40 columns**, one row per file/directory, in this order (m
 | 13 | HomeOID | OID of the directory the file was **created in** — frozen at creation, unchanged by move or rename (older spelling: `CreationDirOID`). Its resolved path is column 12, `CreationDir`. Differs from `ParentOID` (where the file is **now**) exactly when the file has been moved |
 | 14 | FileID | the per-directory child ordinal (low 64 bits) — monotonic, never re-used after deletion |
 | 15 | USN | Update Sequence Number (LastUsn) |
-| 16 | FileAttributes | the on-disk attribute word decoded with **ReFS** names, which is not the same as what Windows reports. Two differences are systematic: bit `0x10000000` prints as `Directory_Internal` where Windows reports `Directory` (0x10), and bit `0x40000` prints as `EA` where Windows reports nothing. Measured against the operator's PowerShell inventory on `lab314_main` (4,684 common paths): **490 rows differ on exactly those two bits** — 26 directories and 464 files — and 1 further row differs for another reason. The tool is reading the bytes correctly; it is naming them differently |
+| 16 | FileAttributes | the on-disk attribute word decoded with **ReFS** names, which is not the same as what Windows reports. Two differences are systematic: bit `0x10000000` prints as `Directory_Internal` where Windows reports `Directory` (0x10), and bit `0x40000` prints as `EA` where Windows reports nothing. Measured against the operator's PowerShell inventory on `lab314_main` (4,684 common paths): **490 rows differ on exactly those two bits** — 26 directories and 464 files — and 1 further row differs for another reason. The tool is reading the bytes correctly; it is naming them differently. For a split record (`RecordPlacement = split`) the word is the file's own record's, not the copy cached in its name row; the change journal carries the same word as the file's own record |
 | 17 | SecurityId | ReFS security-descriptor ID |
 | 18 | OwnerSid | owner: friendly name + SID (e.g. `BUILTIN\Administrators (S-1-5-32-544)`) |
 | 19 | GroupSid | group: friendly name + SID (from the security descriptor) |
@@ -659,7 +808,7 @@ The `files` CSV has **40 columns**, one row per file/directory, in this order (m
 | 35 | ReparseTag | `IO_REPARSE_TAG_* (0xTAG)` for reparse points |
 | 36 | ReparseTarget | symlink/junction target |
 | 37 | IsSparse | `FILE_ATTRIBUTE_SPARSE_FILE` (0x200) set. **`AllocatedSize < FileSize` does not corroborate it** — over 936,277 rows on 117 images, 137 are sparse and the inequality holds on only 58 of them: 22 have `AllocatedSize == FileSize` and 57 have `AllocatedSize > FileSize`, so it fails on **79 of 137 = 57.7 %**, the majority. Read the attribute bit; do not infer sparseness from the sizes. Distinct from `DataResidency = unallocated`, which is derived from the `$DATA` descriptor (extent form owning no allocation and no snapshot) rather than from the attribute bit. The two are independent readings and agree on the corpus |
-| 38 | AllocatedSize | on-disk allocated size. Blank when unresolved, and **blank for directories** — a directory's allocation is not a property this listing resolves (Windows reports 0) |
+| 38 | AllocatedSize | on-disk allocated size. Below `FileSize` on a sparse file, which counts only allocated clusters. Blank when unresolved, when the cached copy is stale and the stream records no single allocation, and **blank for directories** — a directory's allocation is not a property this listing resolves (Windows reports 0) |
 | 39 | InternalFlags | `$SI` internal flags (e.g. `DeleteDisposition`); blank unless a confidently-named bit is set |
 | 40 | IsMoved | `True` when the file currently sits **outside its creation directory** (CreationDirOID ≠ ParentOID with a single name) — a genuine move, as distinct from a hard link into another directory. A moved file may still report `IsResident True`: the move relocates the *record*, not the *bytes* |
 
@@ -708,8 +857,8 @@ Each remnant is classified by **file identity** — a remnant is *deleted* only 
 *former location* of a moved/renamed file. Identical files deleted from several directories are recovered once,
 with every location recorded in the log. Each entry carries a **recoverability verdict** (whether the content is
 present in the remnant and decodes). Every run writes a **recovery log** (audit trail; path via `--log`).
-`deleted` pairs with `export deleted DIR` to write each recovered `.row` evidence remnant + the decoded
-`.recovered` content (`--carve` also reconstructs extent-backed files best-effort). `deleted --orphans` adds a
+`deleted` pairs with `export deleted DIR` to write an index of the entries and the decoded content under
+`content/` (`--carve` also reconstructs extent-backed files best-effort; `--rows` adds the raw `.row` evidence remnants). `deleted --orphans` adds a
 low-confidence tier for Object-Table objects unlinked from the tree.
 
 ## CoW Version Recovery
@@ -736,7 +885,7 @@ low-confidence tier for Object-Table objects unlinked from the tree.
 
 ### The bootstrap() call
 
-`bootstrap()` is the single entry point for volume initialization: locate the ReFS partition, parse the VBR (cluster size, version, container size), parse the SUPB (Volume GUID, checkpoint LCNs), parse both checkpoints and select the higher virtual clock, read the 13 root-table pointers, build the Container Table, initialize the VLCN→PLCN translator, and resolve all OIDs. Afterwards any structure is reachable via `obj_map[oid]` and `walk_bplus()`.
+`bootstrap()` is the single entry point for volume initialization: locate the ReFS partition, parse the VBR (cluster size, version, container size), parse the SUPB (checkpoint LCNs), parse both checkpoints and select the newest that passes its self-checksum (falling back to the other, with a warning; when neither passes, it uses the newest without a warning), read the 13 root-table pointers, build the Container Table, initialize the VLCN→PLCN translator, and resolve all OIDs. Afterwards any structure is reachable via `obj_map[oid]` and `walk_bplus()`.
 
 ```python
 #!/usr/bin/env python3

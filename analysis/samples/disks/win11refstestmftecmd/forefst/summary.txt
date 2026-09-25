@@ -76,7 +76,9 @@ Volume Detail
   Reparse index:      330 entries
   Trash table:        0 entries
   Containers used:    62 / 63  (first maps to PLCN 0 = boot region)
-  Space used:         1.2 GB of 3.9 GB (29.4%) — 2.8 GB free
+  Space used:         1.2 GB of 3.9 GB (29.4%) — 2.8 GB not allocated
+      • Windows reports less than this as free: it holds part of it in
+        reserve, a share the volume does not record
       • 48.0 MB lies beyond the last container,
         so no allocator tracks it — it is neither used nor free
   FS Metadata:        1 child (Change Journal)
@@ -97,4 +99,6 @@ File System Content (from directory walk)
   Hard-linked:        168 files sharing 450 names
   Snapshot versions:  0 (across 0 files)
   ADS host files:     263
+  File data:          not examined — every figure above comes from metadata;
+                      `integrity` checks files that carry an integrity stream
 

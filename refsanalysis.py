@@ -44,32 +44,34 @@ import os
 import struct
 import sys
 import uuid
-from datetime import datetime, timezone
 from pathlib import Path
 
 import forefst as _forefst
-from forefst import (
+from forefst import (_walk_storage_word, _data_residency, _record_placement, DATA_UNKNOWN,   # E87: the `files` axes
+    
     DEFAULT_DEPTH,
-    FILE_ATTR_FLAGS, SUPB_LCN, Translator, _CHKP_FLAG_BITS, _parse_ads_from_value, _select_ct_root, attrs_to_str,
+    FILE_ATTR_FLAGS, SUPB_LCN, Translator, _CHKP_FLAG_BITS, _select_ct_root, attrs_to_str,
     bootstrap, count_snapshots_in_resident, find_refs_partition, fs_content_summary, get_object_si,
     get_resident_file_size, gpt_partition_detail, le16, le32, le64,
     parse_chkp as _forefst_parse_chkp, parse_resident_btree_rows,
     parse_supb as _forefst_parse_supb, parse_vbr as _forefst_parse_vbr, resolve_path,
     validate_image as _validate_image, walk_bplus, walk_directory_tree,
-    _current_stream_extent_backed, _multilevel_extent_backed_size,
     _attrs_to_str, _find_snapshot_files, _guid_str, _hx, _parse_extended_attributes, _vbr_checksum,   # 5.1: single-source helpers
     _vbr_bytes_per_sector,   # K063 / audit B5: IMPORTED, not re-implemented -- this tool multiplied
                              # total_sectors by a hard-coded 512, so a 4Kn volume read 504.0 MB
                              # instead of 3.9 GiB. A4 fixed forefst.py and left this one; a second
                              # copy of the rule is how that happened, so there is only one.
     _verify_self_checksum,   # A1/K035: `chkp --verify` must verify the page's OWN checksum
+    _walk_dir_tree, _filetime_to_str,   # K086: were copies here, each missing what the
+                             # other had (cycle guard vs identity fields; real sizes vs ADS context); merged
+                             # in forefst.py -- a second copy is how a guard ends up in only one of them
     _page_bytes,         # N52: one definition of a metadata page's byte size, shared with forefst.py
     _skip_note,          # A2: a summary count that silently defaults to 0 reads as "none present"
     alloc_capacity, alloc_decode_row, alloc_read_summary, alloc_row_counts, _ALLOC_TIERS,
 )
 
 PROG = "refsanalysis"
-VERSION = "1.13.0"
+VERSION = "1.13.1"
 
 
 
@@ -194,15 +196,7 @@ def _print_table(headers, rows):
     print()
 
 
-def _filetime_to_str(ft):
-    if ft == 0 or ft == 0xFFFFFFFFFFFFFFFF: return "(none)"
-    try:
-        # integer // (not float /): float division rounds up at ~0.9999999 s (E12 fix, matches forefst).
-        ts = (ft - 116444736000000000) // 10000000
-        return datetime.fromtimestamp(ts, tz=timezone.utc).strftime("%Y-%m-%d %H:%M:%S UTC")
-    except (OSError, ValueError):
-        return f"0x{ft:x}"
-
+# _filetime_to_str: imported from forefst.py (K086) -- one definition.
 
 def _find_boot_offset(image, partition_start):
     if partition_start is not None:
@@ -552,6 +546,8 @@ def cmd_summary(image, remaining, partition_start, plus_mode=False):
             if _cap:
                 summary["capacity"] = {
                     "used_bytes": _cap["used_clusters"] * cs,
+                    "not_allocated_bytes": _cap["free_clusters"] * cs,   # K066/E114: not Windows' "free"
+                    "not_allocated": hs(_cap["free_clusters"] * cs),
                     "free_bytes": _cap["free_clusters"] * cs,
                     "allocator_covered_bytes": _cap["covered_clusters"] * cs,
                     "outside_allocator_bytes": _cap["outside_allocator_clusters"] * cs,
@@ -563,7 +559,7 @@ def cmd_summary(image, remaining, partition_start, plus_mode=False):
                 }
 
             # Extended file attribute counts
-            summary["non_resident_files"] = nfiles - nresident   # D1: resident + non-resident = files
+            summary["non_resident_files"] = nfiles - nresident   # D1: inline + extent-backed = files
             if ext is not None:
                 summary["encrypted_files"] = ext["encrypted"]
                 summary["integrity_files"] = ext["integrity"]
@@ -633,7 +629,7 @@ def cmd_summary(image, remaining, partition_start, plus_mode=False):
         print("File System Content")
         print("-" * w)
         print(f"  Directories:        {summary['directories']}")
-        print(f"  Files:              {summary['files']} ({summary['resident_files']} resident + {summary.get('non_resident_files', 0)} non-resident)")
+        print(f"  Files:              {summary['files']} ({summary['resident_files']} inline + {summary.get('non_resident_files', 0)} extent-backed)")
         print(f"  Total file size:    {summary['total_file_size']}")
         print(f"  Security descs:     {summary['security_descriptors']}")
         print(f"  Oldest timestamp:   {summary['oldest_timestamp']}")
@@ -697,7 +693,8 @@ def cmd_summary(image, remaining, partition_start, plus_mode=False):
             if summary.get("capacity"):
                 _c = summary["capacity"]
                 print(f"  Space used:         {_c['used']} of {hs(_c['allocator_covered_bytes'])} "
-                      f"({_c['used_pct']}%) - {_c['free']} free")
+                      f"({_c['used_pct']}%) - {_c['not_allocated']} not allocated")
+                print("                      (Windows reports less as free: it keeps part in reserve)")
                 if _c["outside_allocator_bytes"]:
                     print(f"                      + {hs(_c['outside_allocator_bytes'])} past the last container, "
                           f"outside the allocator (not free space)")
@@ -1380,9 +1377,9 @@ def cmd_allocators(image, remaining, partition_start):
                       "number taken from another table's page")
                 print(); continue
             print(f"    from rows:    span {span:,} clusters   allocated {alloc:,} ({_summary_human_size(alloc * cs)})   "
-                  f"free {free:,} ({_summary_human_size(free * cs)})")
+                  f"not allocated {free:,} ({_summary_human_size(free * cs)})")
             if summ:
-                print(f"    from summary: span {summ[1]:,} clusters   free {summ[2]:,} ({_summary_human_size(summ[2] * cs)})   "
+                print(f"    from summary: span {summ[1]:,} clusters   not allocated {summ[2]:,} ({_summary_human_size(summ[2] * cs)})   "
                       f"[{'agrees' if t['summary_agrees'] else 'DIFFERS from the rows'}]")
                 if not t["summary_agrees"]:
                     print("      • a difference is a finding, not a parse error: on v3.4 the tiers are strictly")
@@ -1395,7 +1392,7 @@ def cmd_allocators(image, remaining, partition_start):
                     a, fr = alloc_row_counts(r)
                     kind = "compact" if r["bitmap"] is None else "bitmap "
                     print(f"      {kind} start {r['start']:>13,}  len {int(r['length']):>9,}  "
-                          f"alloc {a:>9,}  free {fr:>9,}  flags 0x{r['flags']:02x}  fmt {r['format']}")
+                          f"alloc {a:>9,}  unalloc {fr:>9,}  flags 0x{r['flags']:02x}  fmt {r['format']}")
                 if verbose == 1 and len(rows) > 12:
                     print(f"      ... {len(rows) - 12} more (use -vv)")
             print()
@@ -1406,7 +1403,8 @@ def cmd_allocators(image, remaining, partition_start):
                 print("  Volume capacity (from the Medium tier's persisted summary):")
                 print(f"    used {_summary_human_size(cap['used_clusters'] * cs)} of {_summary_human_size(cap['covered_clusters'] * cs)} "
                       f"({100.0 * cap['used_clusters'] / cap['covered_clusters']:.1f}%), "
-                      f"{_summary_human_size(cap['free_clusters'] * cs)} free")
+                      f"{_summary_human_size(cap['free_clusters'] * cs)} not allocated")
+                print("    (not Windows' free figure: Windows keeps part of it in reserve, which the volume does not record)")
                 if cap["outside_allocator_clusters"]:
                     print(f"    {_summary_human_size(cap['outside_allocator_clusters'] * cs)} past the last container is outside "
                           f"the allocator entirely — not free space")
@@ -2551,72 +2549,7 @@ def _iflags_to_list(iflags):
     return [name for bit, name in _INTERNAL_FLAGS.items() if iflags & bit]
 
 
-def _parse_dir_entries(f, ps, cs, tr, vlcns):
-    """Walk a directory object's B+ tree and extract type-0x30 entries."""
-    rows = walk_bplus(f, ps, cs, tr, vlcns)
-    entries = []
-    for kd, vd in rows:
-        if len(kd) < 4: continue
-        attr_type = le16(kd, 0)
-        if attr_type != 0x30: continue
-        flags = le16(kd, 2)
-        try: name = kd[4:].decode("utf-16-le").rstrip("\x00")
-        except UnicodeDecodeError: name = kd[4:].hex()
-
-        if len(vd) <= 84:
-            child_oid = le64(vd, 0x08) if len(vd) >= 0x10 else 0
-            create_time = le64(vd, 0x10) if len(vd) >= 0x18 else 0
-            modify_time = le64(vd, 0x18) if len(vd) >= 0x20 else 0
-            change_time = le64(vd, 0x20) if len(vd) >= 0x28 else 0
-            access_time = le64(vd, 0x28) if len(vd) >= 0x30 else 0
-            file_attrs = le32(vd, 0x40) if len(vd) >= 0x44 else 0
-            file_size = le64(vd, 0x38) if len(vd) >= 0x40 else 0
-            file_id = le64(vd, 0x00) if len(vd) >= 8 else 0
-            is_dir = bool(file_attrs & 0x10000000)
-            resident = False
-            # val+0x08 is the child's own OID only for a SUBDIRECTORY; a non-resident FILE has the
-            # home-dir backref there (not its own OID -- files have no own OID). Keep child_oid = own
-            # OID for dirs (drives recursion); expose 0 for files and keep the backref aside. --oid bug.
-            home_oid = 0 if is_dir else child_oid
-            if not is_dir:
-                child_oid = 0
-        else:
-            child_oid = 0
-            home_oid = 0
-            file_id = 0
-            create_time = le64(vd, 0x28) if len(vd) >= 0x30 else 0
-            modify_time = le64(vd, 0x30) if len(vd) >= 0x38 else 0
-            change_time = le64(vd, 0x38) if len(vd) >= 0x40 else 0
-            access_time = le64(vd, 0x40) if len(vd) >= 0x48 else 0
-            file_attrs = le32(vd, 0x48) if len(vd) >= 0x4C else 0
-            file_size = get_resident_file_size(vd)  # C10: real resident size, not 0
-            is_dir = False
-            resident = True
-
-        ads_list = _parse_ads_from_value(vd) if resident and len(vd) > 0xA8 else []
-        # F5/B2 (mirrors forefst.walk_directory_tree): a long-value file whose CURRENT $DATA is extent-backed
-        # is actually NON-RESIDENT. ADS were already read from the inline value above (correct); only the
-        # reported residency -- and, for the B2 nested-subtree case, the size -- must reflect on-disk truth.
-        # Delegates the decision to forefst's residency primitives => identical to forefst files/summary/details.
-        if resident and not is_dir:
-            if _current_stream_extent_backed(vd):
-                resident = False
-            else:
-                _ml = _multilevel_extent_backed_size(vd, cs)
-                if _ml is not None:
-                    file_size = _ml
-                    resident = False
-        entries.append({
-            "name": name, "flags": flags, "child_oid": child_oid, "home_oid": home_oid,
-            "file_id": file_id,
-            "create_time": create_time, "modify_time": modify_time,
-            "change_time": change_time, "access_time": access_time,
-            "file_attrs": file_attrs, "file_size": file_size,
-            "is_dir": is_dir, "resident": resident, "value_len": len(vd),
-            "raw_value": vd, "ads": ads_list,
-        })
-    return entries
-
+# _parse_dir_entries: imported from forefst.py (K086) -- one definition.
 
 def _build_backing_index(f, ps, cs, tr, obj_map):
     """{(owner_dir_oid, file_id): [(size@0x58, file_attrs@0x48), ...]} over every directory's type-0x40
@@ -2651,45 +2584,7 @@ def _backing_file_attrs(idx, home_oid, file_id, size):
     return None
 
 
-def _apply_backing_ea(results, idx):
-    """OR the authoritative EA bit (0x40000) back into non-resident files whose type-0x30 pointer dropped
-    it (proven: only the EA bit, plus a rare benign Archive bit, ever differ from the backing). Mirrors
-    forefst's walk_directory_tree fix so files/attributes/details agree across both tools."""
-    for r in results:
-        is_res = r.get("is_resident", r.get("resident", False))
-        if r.get("is_dir") or is_res or (r.get("file_attrs", 0) & 0x40000):
-            continue
-        bfa = _backing_file_attrs(idx, r.get("home_oid", 0), r.get("file_id", 0), r.get("file_size", 0))
-        if bfa is not None and (bfa & 0x40000):
-            r["file_attrs"] = r.get("file_attrs", 0) | 0x40000
-            r["has_ea"] = True
-
-
-def _walk_dir_tree(f, ps, cs, tr, obj_map, oid, path, depth, max_depth, results, _visited=None):
-    """Recursively walk directory tree, collecting entries."""
-    if oid not in obj_map: return
-    # Cycle guard: a directory's child_oid pointing back at an ancestor (a corrupt/crafted tree) would
-    # otherwise recurse forever now that the default depth is full (DEFAULT_DEPTH). Well-formed trees never
-    # revisit an OID, so this never drops a legitimate entry.
-    if _visited is None: _visited = set()
-    if oid in _visited: return
-    _visited.add(oid)
-    try: entries = _parse_dir_entries(f, ps, cs, tr, obj_map[oid])
-    except Exception as _e:
-        _skip_note("_walk_dir_tree", "a subtree", _e)
-        return
-    for entry in entries:
-        child_path = f"{path}/{entry['name']}" if path else entry["name"]
-        entry_type = "DIR " if entry["is_dir"] else "FILE"
-        results.append({
-            "path": child_path, "type": entry_type,
-            "oid": entry["child_oid"], **entry,
-        })
-        if entry["is_dir"] and depth < max_depth and entry["child_oid"] in obj_map:
-            _walk_dir_tree(f, ps, cs, tr, obj_map, entry["child_oid"],
-                           child_path, depth + 1, max_depth, results, _visited)
-
-
+# _walk_dir_tree: imported from forefst.py (K086) -- one definition.
 
 def _decode_lx_mode(mode_val):
     """Decode Linux mode_t to human-readable string."""
@@ -2792,7 +2687,7 @@ _ADS_DESCRIPTOR = 0x000500B0
 _DATA_DESCRIPTOR = 0x000E0080
 
 # N2 fix (2026-07-03): the local ADS byte-scanner (found only the FIRST ADS on multi-ADS files, undercounting
-# 278 corpus-wide) is REPLACED by forefst's row-table _parse_ads_from_value (imported above). Same entry shape;
+# 278 corpus-wide) is REPLACED by forefst's row-table _parse_ads_from_value (used via the merged walker). Same entry shape;
 # `files` ADS counts now match forefst. See analysis/reports/forefstdev_audit_verification_2026-07-03.md (N2).
 
 
@@ -2831,9 +2726,18 @@ def cmd_files(image, remaining, partition_start):
 
         results = []
         _walk_dir_tree(f, ps, cs, tr, obj_map, start_oid, "", 0, max_depth, results)
-        # Non-resident files' EA bit (0x40000) lives in the type-0x40 backing (+0x48), not the type-0x30
-        # pointer (+0x40) the walk read -- OR it back in so the Attrs column is correct (matches forefst).
-        _apply_backing_ea(results, _build_backing_index(f, ps, cs, tr, obj_map))
+        # K097: a file's size and attributes come from forefst's AUTHORITATIVE walk_directory_tree, as they
+        # already do for `attributes` and `details`. The walk above reads the NAME row, and a split name's
+        # size there is a cached copy that goes stale on hard-linked names (`papa_victor_867137.csv`: 293,302
+        # cached, 479,429 the object's own). The local backing lookup this replaces could not correct it --
+        # it keyed on that same cached size -- and it re-implemented the resolution forefst's walk owns.
+        _ffp = {r["path"]: r for r in
+                walk_directory_tree(f, ps, cs, tr, obj_map, start_oid, max_depth, True, set())}
+        for r in results:
+            a = _ffp.get(r["path"]) if r["type"] == "FILE" else None
+            if a is not None:
+                r["file_size"] = a.get("file_size", r["file_size"])
+                r["file_attrs"] = a.get("file_attrs", r["file_attrs"])
 
         n_dirs = sum(1 for r in results if r["type"] == "DIR ")
         n_files = sum(1 for r in results if r["type"] == "FILE")
@@ -2849,7 +2753,7 @@ def cmd_files(image, remaining, partition_start):
                 mod = _filetime_to_str(r["modify_time"]).replace(" UTC", "")
                 a = _attrs_to_str(r["file_attrs"], full=False)
                 sz = r["file_size"] if r["type"] == "FILE" else ""
-                oid_str = _hx(r['oid']) if r['oid'] else ("(resident)" if r.get("resident") else "(non-res)")
+                oid_str = _hx(r['oid']) if r['oid'] else _walk_storage_word(r)
                 print(f"  {r['type']:<5} {oid_str:<12} {a:<10} {sz:>10} {mod:<20} {r['path']}")
                 for ads in r.get("ads", []):
                     sz_ads = ads["stream_size"]
@@ -2858,7 +2762,7 @@ def cmd_files(image, remaining, partition_start):
             print(f"  {'Type':<5} {'OID':<12} {'Path'}")
             print(f"  {'-'*60}")
             for r in results:
-                oid_str = _hx(r['oid']) if r['oid'] else ("(resident)" if r.get("resident") else "(non-res)")
+                oid_str = _hx(r['oid']) if r['oid'] else _walk_storage_word(r)
                 print(f"  {r['type']:<5} {oid_str:<12} {r['path']}")
                 for ads in r.get("ads", []):
                     print(f"   ADS  {'':12} {r['path']}:{ads['name']}  ({ads['stream_size']}B)")
@@ -2951,6 +2855,11 @@ def cmd_attributes(image, remaining, partition_start):
             if a is None:
                 continue
             r["is_resident"] = a.get("is_resident", r.get("is_resident"))
+            # E87: the Storage line states both axes in the words `files` uses for them. It printed RESIDENT /
+            # NON-RESIDENT from the walk's raw flag, which is "embedded AND inline", so every split file whose
+            # bytes are inline (278 on win11refs2tspecials) read NON-RESIDENT while `files` said inline.
+            r["data_residency"] = _data_residency(a)
+            r["placement"] = _record_placement(a)
             r["file_attrs"] = a.get("file_attrs", r.get("file_attrs", 0))
             for _flag in ("is_encrypted", "is_compressed", "has_reparse", "has_ea"):
                 r[_flag] = a.get(_flag, r.get(_flag))
@@ -2963,7 +2872,7 @@ def cmd_attributes(image, remaining, partition_start):
         total = len(results)
         dirs = sum(1 for r in results if r.get("is_dir"))
         files = total - dirs
-        resident = sum(1 for r in results if r.get("is_resident"))
+        inline = sum(1 for r in results if not r.get("is_dir") and r.get("data_residency") == "inline")
         encrypted = sum(1 for r in results if r.get("is_encrypted"))
         wsl = sum(1 for r in results if "lx_mode" in r)
         reparse = sum(1 for r in results if r.get("has_reparse"))
@@ -2973,7 +2882,7 @@ def cmd_attributes(image, remaining, partition_start):
         print(f"    Total entries:     {total}")
         print(f"    Directories:       {dirs}")
         print(f"    Files:             {files}")
-        print(f"    Resident files:    {resident}")
+        print(f"    Inline files:      {inline}")
         print(f"    EFS encrypted:     {encrypted}")
         print(f"    WSL metadata:      {wsl}")
         print(f"    Reparse points:    {reparse}")
@@ -3003,10 +2912,12 @@ def cmd_attributes(image, remaining, partition_start):
                 print(f"    SecurityId:  {_hx(r['security_id'])}")
             if "usn" in r and r["usn"]:
                 print(f"    USN:         {r['usn']}")
-            if r.get("is_resident"):
+            if not is_dir:
+                _pl = r.get("placement") or ("embedded" if r.get("value_len", 0) > 84 else "split")
+                print(f"    Storage:     {r.get('data_residency') or DATA_UNKNOWN} (record {_pl}"
+                      + (f", {r['value_len']} bytes)" if _pl == "embedded" else ")"))
+            elif r.get("is_resident"):
                 print(f"    Storage:     RESIDENT ({r['value_len']} bytes)")
-            elif not is_dir:
-                print("    Storage:     NON-RESIDENT (no own OID)")
             if r.get("is_encrypted"):
                 print("    *** EFS ENCRYPTED ***")
             if "lx_mode" in r:
@@ -3214,12 +3125,25 @@ def cmd_details(image, remaining, partition_start):
         # Consistency with forefst: forefst's OWN `details` resolves a FILE via walk_directory_tree and uses
         # that record. Do the same so residency (F5/B2), SecurityId and USN match files/attributes/summary
         # exactly -- the record carries the collision-safe backing resolution we must not re-derive by hand.
+        _m = None
         if not info.get("is_dir"):
-            _norm = path.replace("\\", "/").strip("/")
+            # Keyed on what resolve_path RESOLVED (parent OID + the entry's own name), not on the typed string:
+            # resolve_path accepts another letter case, '//' and '/./', and an exact-string lookup then missed
+            # the record and fell back to the name row's copies and the old storage words.
+            _nm = (kd[4:].decode("utf-16-le", errors="replace").rstrip("\x00")
+                   if kd is not None and len(kd) > 4 else name)
             _m = next((r for r in walk_directory_tree(f, ps, cs, tr, obj_map, 0x600, 100, True, set())
-                       if r.get("path") == _norm), None)
+                       if not r.get("is_dir") and r.get("parent_oid") == parent_oid and r.get("name") == _nm), None)
+            if _m is None:
+                # the walk does not list it: say so rather than guess the data residency from the row length
+                info["storage"] = DATA_UNKNOWN
+                info["record_placement"] = "embedded" if len(vd) > 84 else "split"
             if _m is not None:
                 resident = _m.get("is_resident", resident)
+                # E87: `storage` is the data residency `files` reports; it held the name row's length test
+                # (placement) in JSON and the walk's raw flag in text -- two meanings in one command.
+                info["storage"] = _data_residency(_m) or DATA_UNKNOWN
+                info["record_placement"] = _record_placement(_m)
                 info["file_attrs"] = _m.get("file_attrs", info.get("file_attrs", 0))
                 info["snapshot_count"] = _m.get("snapshot_count", info.get("snapshot_count", 0))
                 if _m.get("security_id"):
@@ -3235,17 +3159,29 @@ def cmd_details(image, remaining, partition_start):
         W = 78
         print("=" * W); print(f"File Details — {path}"); print("=" * W)
         print(f"  Name:           {name}")
-        if resident:
+        if _m is not None:
+            print(f"  Storage:        {info['storage']} (record "
+                  + ("embedded in the parent directory row" if info["record_placement"] == "embedded"
+                     else "split out to its own type-0x40 record") + "; no OID of its own)")
+        elif not info.get("is_dir"):
+            print(f"  Storage:        {DATA_UNKNOWN} (record {info['record_placement']}; the directory walk did not "
+                  f"list this path)")
+        elif resident:
             print("  Storage:        RESIDENT (inline in parent dir row — no OID of its own)")
-        elif info.get("is_dir"):
-            print(f"  Storage:        non-resident directory  (OID {_hx(info['oid'])}, own B+-tree)")
         else:
-            print("  Storage:        non-resident file  (no OID of its own; data in out-of-line extents)")
-        # FileRef identity (matches forefst `details`): a non-resident file's stable reference is
-        # (home_oid = value+0x08, file_id = value+0x00). home_oid is the CREATION directory, frozen — so
-        # home_oid != current parent flags a relocated (moved) or cross-directory hard-linked name.
-        if not resident and not info.get("is_dir") and vd is not None and len(vd) >= 0x10:
-            _hb = le64(vd, 0x08); _fi = le64(vd, 0x00)
+            print(f"  Storage:        non-resident directory  (OID {_hx(info['oid'])}, own B+-tree)")
+        # FileRef identity (matches forefst `details` and `files` ObjectRef): HomeOid:FileId. home_oid is the
+        # CREATION directory, frozen -- so home_oid != current parent flags a relocated (moved) or
+        # cross-directory hard-linked name. Taken from the walk record `files` uses; only a SPLIT row carries
+        # it at value+0x08/+0x00. Gating that read on the walk's raw is_resident flag ("embedded AND inline")
+        # sent every embedded file whose bytes are in extents down it, printing two unrelated fields of the
+        # long row as a FileRef ('0x1e000000001:0x10028000000a8') and a false "relocated" line.
+        if not info.get("is_dir"):
+            _hb = _fi = 0
+            if _m is not None:
+                _hb, _fi = _m.get("home_oid") or 0, _m.get("file_id") or 0
+            elif vd is not None and 0x10 <= len(vd) <= 84:
+                _hb, _fi = le64(vd, 0x08), le64(vd, 0x00)
             if _hb and _fi:
                 print(f"  FileRef:        0x{_hb:x}:0x{_fi:x}   (HomeOid:FileId, the stable file reference)")
                 if _hb != parent_oid:
@@ -4019,10 +3955,11 @@ CMD_HELP = {
    "ex": [("all", "full structural dump"), ("all > structure_dump.txt", "capture the whole report")]},
  "files": {"tag": "List files and directories (lab-format tree)",
    "desc": ["Flat namespace listing from the root (or --oid subtree). -v adds a wide table with decoded",
-            "attributes, sizes and modified-times. (forefst's `files` is the forensic CSV/JSON equivalent.)"],
+            "attributes, sizes and modified-times. (forefst's `files` is the forensic CSV/JSON equivalent.)",
+            "Metadata only: no file's data is read, so a clean listing says nothing about file contents."],
    "opts": [("-v", "verbose table (Attrs, Size, Modified)"),
             ("--oid 0xNNN", "start the walk at this directory OID (default 0x600)"),
-            ("--depth N", "max recursion depth (default 20)")],
+            ("--depth N", "max recursion depth (default: full -- the whole tree)")],
    "ex": [("files", "flat namespace listing"), ("files -v", "verbose table with attributes"),
           ("files --oid 0x705", "list only the subtree under OID 0x705")]},
  "attributes": {"tag": "File attribute deep-dive (EA / WSL / timestamps / flags)",
@@ -4030,7 +3967,8 @@ CMD_HELP = {
             "-v adds the decoded Extended-Attributes block ($LXMOD/$LXUID/...). --filter narrows by type."],
    "opts": [("-v", "also decode the Extended Attributes block (WSL $LX*)"),
             ("--filter T", "one of: encrypted, wsl, reparse, snapshot"),
-            ("--oid 0xNNN", "start OID (default 0x600)"), ("--depth N", "max recursion depth (default 10)")],
+            ("--oid 0xNNN", "start OID (default 0x600)"),
+            ("--depth N", "max recursion depth (default: full -- the whole tree)")],
    "ex": [("attributes --filter wsl", "files carrying WSL/Linux metadata"),
           ("attributes -v --filter reparse", "reparse points with decoded buffers"),
           ("attributes -v", "full attribute dump incl. EAs")]},

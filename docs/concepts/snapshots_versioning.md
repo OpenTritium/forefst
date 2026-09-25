@@ -142,10 +142,11 @@ walk of the embedded headers is on the [$SNAPSHOT attribute](../attributes/SNAPS
   ReFS comes to handing the analyst a file's editing timeline.
 
 - **Do not confuse snapshots with Alternate Data Streams.** Type 0xB0 serves *both* stream snapshots and
-  ADS. The reliable discriminator is `data_sub_id`: a value in `0x1000–0xFFFF` is a true snapshot, an
-  ASCII/named stream is an ADS. This is corroborated by `val[0x10]` (the StreamSummary flag: `2` =
-  snapshot, `0` = ADS) and by the `val[0x02]` attribute flags (a snapshot sets `0x1C00`, with bit
-  `0x0400` = HasSnapshot). The u32 at `val[0x38]` is **not** a discriminator: it is the stream's
+  ADS. The discriminator is `val[0x10]`, the StreamSummary flag: **`2` = snapshot, `0` = ADS**.
+  `data_sub_id` is **not** one: an ADS's sub-id also falls in `0x1000–0xFFFF`, so a range test on it admits
+  alternate streams as snapshots — measured over five volumes, every row it admits beyond the flag test
+  is an ADS, none a snapshot. The flag is corroborated by the `val[0x02]` attribute flags (a snapshot sets
+  `0x1C00`, with bit `0x0400` = HasSnapshot). The u32 at `val[0x38]` is **not** a discriminator: it is the stream's
   integrity/checksum-type selector — `0x02` on None/CRC64 volumes and `0x04` on SHA-256 volumes — so it
   follows the volume's checksum configuration rather than the snapshot/ADS distinction and is useless for
   this purpose. Mislabeling an ADS row as a snapshot, or the reverse, corrupts both the version count and

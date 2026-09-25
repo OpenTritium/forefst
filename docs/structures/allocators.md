@@ -59,16 +59,18 @@ Used where a whole range is uniformly allocated or uniformly free and a bitmap w
 
 ## The volume's own accounting
 
-Each allocator table keeps a **384-byte summary in its root page**, which ReFS maintains as it allocates and frees. It sits at the offset named in the table's index-root descriptor (`page + 0x50 + the u16 at page + 0x54`, in practice `page + 0x78`) and reads as a list of 64-bit values, of which two are decoded:
+Each allocator table keeps a **416-byte summary in its root page**, which ReFS maintains as it allocates and frees. It sits at the offset named in the table's index-root descriptor (`page + 0x50 + the u16 at page + 0x54`, in practice `page + 0x78`) and reads as a list of 64-bit values, of which two are decoded:
 
 | Slot | Field |
 |------|-------|
 | 1 | Clusters covered |
-| 2 | Free clusters |
+| 2 | Clusters not allocated |
+
+**Slot 2 is not Windows' free figure.** Windows' `fsutil fsinfo refsinfo` splits the unallocated clusters into *Free Clusters* and *Total Reserved*, and slot 2 is their **sum**: on `win10refsmini`, captured unchanged after that command ran, 327,420 = 244,188 free + 83,232 reserved. The reserved share is recorded in none of the summary's slots. What follows from slot 1 − slot 2 is exactly Windows' **used** (total − free − reserved): 180,484 clusters by both counts. That used figure counts everything the Medium tier does not hold as unallocated — on ReFS 3.4 that includes the ranges the other two tiers span.
 
 This is the number ReFS itself works from, and it costs a single page read — no tree walk. `refsanalysis.py <image> allocators` prints it **beside** the totals recomputed from the rows, because the two can legitimately differ and the difference is informative:
 
-- On **ReFS 3.4** the summary spans the whole mapped volume while the Medium tier's rows span less (the tiers are strictly separated, below) — yet the **free counts still match exactly**.
+- On **ReFS 3.4** the summary spans the whole mapped volume while the Medium tier's rows span less (the tiers are strictly separated, below) — yet the **not-allocated counts still match exactly**.
 - If **both** numbers disagree, that points at a damaged volume — for example a truncated container table, where much of the volume is no longer mapped at all.
 
 Across the corpus the summary and the recomputed rows agree on 268 of 281 tier readings, and every one of the 13 differences falls into one of those two explained cases.
@@ -127,7 +129,7 @@ The on-disk row format is unchanged across versions despite a driver refactoring
 
 Relevant driver routines: `Allocate` (the general allocation routine that finds free page groups in the bitmap) and `MsAllocateObjectId` (allocates a new OID via the allocator subsystem).
 
-The row layout above is read straight from the driver's own codec, in both generations: v3.14 `CmsAllocator::BPlusRowToRegionEx` decodes a row (and expands the 0xFFFF hint to the full range length), `CmsAllocator::PersistRegion` writes one back, and the v3.4 `CmsGlobalAllocator::CopyBPlusRowToFv` copies one — the last of these copies exactly `range_length / 8` bitmap bytes, which is where the variable row length comes from. `CmsAllocator::LoadAllocatorSummary` is what reads the 384-byte root-page summary; the presence of `RebuildAllocatorSummary` and `MarkAllocatorSummaryOutOfSync` beside it is why the summary is cross-checked rather than trusted blindly.
+The row layout above is read straight from the driver's own codec, in both generations: v3.14 `CmsAllocator::BPlusRowToRegionEx` decodes a row (and expands the 0xFFFF hint to the full range length), `CmsAllocator::PersistRegion` writes one back, and the v3.4 `CmsGlobalAllocator::CopyBPlusRowToFv` copies one — the last of these copies exactly `range_length / 8` bitmap bytes, which is where the variable row length comes from. `CmsAllocator::LoadAllocatorSummary` is what reads the 416-byte root-page summary; the presence of `RebuildAllocatorSummary` and `MarkAllocatorSummaryOutOfSync` beside it is why the summary is cross-checked rather than trusted blindly.
 
 ## Cross-references
 

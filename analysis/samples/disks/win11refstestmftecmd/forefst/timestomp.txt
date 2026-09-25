@@ -300,7 +300,7 @@ ReFS Timestamp-Anomaly (Timestomp) Detection
   HIGH   journal/link  2021-11-15 07:39:56   2026-05-23 07:44:18   testspecials/xbpt_uniform_beta_276130.dat
          signals: CHANGE_LATE, PRE_FORMAT, USN_BASIC_INFO_CHANGE, USN_CREATE_MISMATCH
 
-  (0 MEDIUM + 0 LOW row(s) hidden — `--min MEDIUM` / `--min LOW` to show; CSV/JSON already include every tier.)
+  (0 MEDIUM + 0 LOW + 57 INFO row(s) hidden — `--min MEDIUM` / `--min LOW` / `--min INFO` to show; CSV/JSON already include every tier.)
 
   Signal legend  (AUTHORITATIVE = independent evidence · HEURISTIC = suggestive $SI-only):
     [AUTHORITATIVE]

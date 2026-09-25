@@ -263,8 +263,11 @@ def test_extract_reports_hole_sourced_bytes_but_still_writes_them():
             info = _first_extent_file(f, ps, cs, tr, obj_map)
         finally:
             f.close()
-        if info is not None:
-            break
+        # every candidate holds extent-backed files (8 on win10refsmini, hundreds on the others): one that is HERE and yields none is a
+        # decoder regression, not a missing witness (the first K098 build did exactly this on v3.4 and the
+        # suite reported it only as one more skip)
+        assert info is not None, f"{cand}: present, but no extent-backed file decodes"
+        break
     if img is None or info is None:
         pytest.skip("no corpus image with an extent-backed file")
 
@@ -321,6 +324,7 @@ def test_a_file_with_no_holes_extracts_with_exit_zero():
         f, ps, cs, tr, roots, obj_map, vmaj, vmin, _ = F.bootstrap(img, None)
         try:
             cand_info = _first_extent_file(f, ps, cs, tr, obj_map)
+            assert cand_info is not None, f"{cand}: present, but no extent-backed file decodes"   # as above
             if cand_info is not None:
                 holes = F._extent_hole_ranges(f, ps, cs, cand_info["extents"], cand_info["file_size"])
                 if holes == []:

@@ -32,8 +32,8 @@ begin `0x18` — that leading `0x18` is **24**, the size of a plain record, not 
 
 | Flags | Record size | Meaning |
 |-------|-------------|---------|
-| 0x0040 | 24 | Standard data-run extent (variable run_length) |
-| 0x0050 | 24 | Data-run with bit 0x10 set |
+| 0x0040 | 24 | Data run, **allocated but not written as of this row version** (bit 0x10 clear) — never read; the range is zero-filled |
+| 0x0050 | 24 | Data run, **written** (bit 0x10 set) — its clusters hold the file's bytes |
 | 0x0060 / 0x0064 | 24 | **Sparse hole** — identified by **bit 0x20**. Its run is a zero-filled hole, never read from disk (see below) |
 | 0x00d0 | 24 + run*4 | **Per-cluster checksums present** (bit 0x80 set, over the 0x0050 run flags): each cluster of the run is followed by its CRC32-C (Castagnoli poly `0x82f63b78`) |
 
@@ -42,13 +42,37 @@ in **every** case, with no exception. Observed flag values are `0x0040`, `0x0050
 `0x00d0` (checksummed).
 
 Run cardinality is carried explicitly by the Run length field at extent+0x14, not by the flag bits:
-both 0x0040 and 0x0050 appear with single-cluster and multi-cluster runs. The meaning of the 0x10 bit that
-distinguishes 0x0050 from 0x0040 remains unresolved; it correlates with the file_attrs 0x8000 flag.
+both 0x0040 and 0x0050 appear with single-cluster and multi-cluster runs.
+
+**Bit 0x10 means "written", as of the row version that carries it.** A run whose flags word is known and
+has bit 0x10 clear was allocated but not yet written when that row version was committed, and its
+clusters are not the file's content: they are zero-filled, never read. Three measurements fix the
+meaning — a purpose-built lab volume whose files extract byte-exact only under this rule (7 of 7), a real
+installation where the clear-bit runs of pre-allocated files hold **another file's bytes** (693 runs, among
+them readable text), and the inverse control, a file whose genuinely written zeros must still be read.
+
+Two qualifications follow from that measurement:
+
+- **The bit belongs to the row version, not to the cluster.** A deleted remnant is often an earlier
+  version of a file that is still live, committed between allocation and the write. For the same VLCN the
+  live row can carry `0x00D0` (written) while the remnant carries `0x0040` (not written). Recovering that
+  remnant zero-fills the run — which is what the file held at that moment — even though the clusters hold
+  data now, and a carve reports how many non-zero bytes lie under the zeros it wrote.
+- **A flags word of 0 is unknown, not "unwritten".** The heuristic marker-scan decoder recovers no flags,
+  so its runs carry 0; treating 0 as "not written" would zero real content. Only a positively known flags
+  word with bit 0x10 clear marks a run unwritten.
 
 **Records are 8-byte aligned**, so the step from one record to the next is `record_size` rounded up to a
-multiple of 8. A checksummed single-cluster record is 28 bytes (24 + one 4-byte CRC32-C) and is therefore
-followed 32 bytes later — the 4 bytes in between are padding, not a field. A plain record is already a
-multiple of 8 and needs none.
+multiple of 8 — **the size and the step are different quantities**, and a reader must step by the second.
+A checksummed single-cluster record is 28 bytes (24 + one 4-byte CRC32-C) and is followed 32 bytes later;
+a three-cluster one is 36 bytes, followed 40 bytes later. The bytes in between are padding, not a field.
+A plain record is already a multiple of 8 and needs none. Measured on the single-node extent maps of
+`win11refstestmftecmd`: stepping by the aligned step reaches all **142** checksummed clusters in them,
+stepping by the record size only 127, and wherever a record follows a 28-byte one it starts at +32, never at
++28. A node's records are the ones its key index names — a node can keep a superseded record in a slot the
+index no longer points at — so a complete reader follows the index, and descends into child pages where the
+map spans more than one node: that is how `integrity` reads them, **55,586** checksummed clusters in 189 files
+on that volume, every one matching its stored CRC-32C.
 
 Checksummed and plain records share the same header format and both point at real file data; they differ only
 in the trailing checksums and the size that implies.

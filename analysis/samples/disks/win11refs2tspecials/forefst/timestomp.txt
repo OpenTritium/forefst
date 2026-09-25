@@ -74,7 +74,7 @@ ReFS Timestamp-Anomaly (Timestomp) Detection
   HIGH   journal/link  2022-10-13 16:40:23   2026-05-16 16:40:23   testspecials2/trace_trace_495265.log
          signals: CHANGE_LATE, PRE_FORMAT, HARDLINK_MACB_MISMATCH
 
-  (0 MEDIUM + 0 LOW row(s) hidden — `--min MEDIUM` / `--min LOW` to show; CSV/JSON already include every tier.)
+  (0 MEDIUM + 0 LOW + 95 INFO row(s) hidden — `--min MEDIUM` / `--min LOW` / `--min INFO` to show; CSV/JSON already include every tier.)
 
   Signal legend  (AUTHORITATIVE = independent evidence · HEURISTIC = suggestive $SI-only):
     [AUTHORITATIVE]

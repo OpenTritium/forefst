@@ -127,6 +127,16 @@ def main():
         "hl-latest-authentic":   "the latest Created among the siblings is the authentic birth",
         "hl-never-clean-sibling": "flagged on the backdated name and never on the clean sibling",
         "hl-stomp-causes-divergence": "the names disagree on Created, which a name-scoped stomp is the natural cause of",
+        # E97-E100, retired 2026-09-19. Each canary is the claim AS THE PROJECT ONCE WROTE IT.
+        "hole-is-vlcn-zero":       "an inline extent record with VLCN == 0 is a sparse hole, not a readable extent",
+        "integrity-flag-run-one":  "each checksummed cluster is its own extent with flag 0x1C00D0 and run_length 1",
+        "mlog-budget-minus-first": "remaining = total_size - first_record_offset",
+        "mlog-commit-always-zero": "commit is marked at the checkpoint layer, so this is 0 on every volume, healthy or not",
+        "vbr-sector-always-512":   "| 0x20 | 4 | Bytes per sector | u32 | 512 (always) |",
+        # E113, retired 2026-09-23 -- each is the v1.13.0 text verbatim (changelog / RC3 evidence).
+        "n94-carves-invented":     "Deleted-content recovery refuses two kinds of invented bytes.",
+        "carve-cover-coincidence": "a misaligned walk whose cluster counts summed to exactly the file's allocation by coincidence, satisfying the cover guard",
+        "gfsareplay-is-metadata":  "nine of the fourteen open with GFSAREPLAY, a filesystem-internal signature",
     }
     dead = []
     for e in spec:

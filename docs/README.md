@@ -4,6 +4,8 @@ Reverse engineering documentation for the Resilient File System (ReFS), covering
 
 > **[Knowledge Map](KNOWLEDGE_MAP.md)** — the single index from any topic to its authoritative sources (master-reference section, findings, evidence). · **Directory indexes:** [structures](structures/README.md) · [concepts](concepts/README.md) · [attributes](attributes/README.md) · [examples](examples/README.md). **[How this was verified](methodology.md)** — the dual-evidence methodology, evidence levels, and how to trace any claim to its provenance. · **[Conventions](CONTRIBUTING.md)** for adding pages.
 
+**Known issues in 1.13.1:** the defects that can change what an examiner reports, each with what to do meanwhile — see [forefst.md — Known issues in 1.13.1](tools/forefst.md#known-issues-in-1131).
+
 **New to ReFS forensics?** Start with the [Forensic Analysis Workflow](concepts/forensic_analysis_workflow.md) (end-to-end runbook), the [Carrier categories](concepts/carrier_categories.md) (how the artifacts are organised), and [What Survives](concepts/what_survives.md) (delete / format / upgrade).
 
 ## Quick Start

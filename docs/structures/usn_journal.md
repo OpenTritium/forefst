@@ -223,7 +223,7 @@ The `--csv` and `--json` exports share one field set (17 columns, in this order)
 | 8 | `home_oid` | The containing/creation directory for a file; the object's **own** OID for a directory |
 | 9 | `file_id` | The entry ordinal (lower half of the File ID); `0` for a directory |
 | 10 | `parent_oid` | The current parent directory's OID |
-| 11 | `path` | The record's parent directory resolved **against the volume as it is in this image**, joined with the file name the record carries. **Read the caution below before relying on it.** |
+| 11 | `path` | The record's parent directory resolved **against the volume as it is in this image**, joined with the file name the record carries; `<oid 0x…>` or `<unlinked 0x…>` in place of a parent that has none. **Read the caution below before relying on it.** |
 | 12 | `attrs_hex` | Raw file-attribute bitmask |
 | 13 | `attrs` | Decoded attribute names |
 | 14 | `record_length` | The on-disk record length |
@@ -238,11 +238,16 @@ The journal is a historical record; the path column is not. It is built by looki
 result with the file name stored in the record. Two consequences follow, and both matter when the
 column is used as evidence:
 
-- **A parent that no longer exists cannot be resolved.** The column then shows `<oid 0x…>` — an honest
-  statement that the directory is gone, not a path. On a real Windows installation this is the majority
-  case: measured over 217,892 records on one installation, **118,172 (54.2 %)** name a parent directory
-  that has since been deleted, against 99,365 (45.6 %) that still resolve. A freshly built lab volume
-  shows 0 %, which is why the effect is invisible unless you look at a system with churn.
+- **A parent that no longer exists cannot be resolved.** The column then shows `<oid 0x…>` — the
+  directory's object is gone from the Object Table, so there is no path to give. On a real Windows
+  installation this is the majority case: measured over 217,892 records on one installation, **118,172
+  (54.2 %)**. A freshly built lab volume shows 0 %, which is why the effect is invisible unless you look at
+  a system with churn.
+- **A parent that was unlinked but not yet reclaimed** shows `<unlinked 0x…>`: its object is still in the
+  Object Table, but no directory holds a name for it, so it has no path either. On the same installation
+  **8,931 records (4.1 %)**, under 108 such directories. Its remaining contents can still be read —
+  `deleted --orphans` reports them.
+- The other **90,597 (41.6 %)** resolve to a path; 192 carry no name at all.
 - **A parent that was renamed or moved after the event resolves to its CURRENT location.** The row then
   joins a present-day directory path to a historical file name, and the combination was never a real
   path at any moment.

@@ -36,10 +36,14 @@ SAMPLES = ("win11refs2tsnapshots.raw", "win11refs2tspecials.raw",
 FE_CMDS = ("files --csv", "files --json", "summary --json", "fastsummary --json", "deleted",
            "usn --stats", "timeline --csv", "timestomp --csv", "specials --json", "ads --json",
            "security --files", "reparse --index", "snapshots -v", "integrity", "integrity --checksums",
-           "dataruns", "search a")
+           "dataruns", "search a",
+           # 1.13.1: fixes no pinned command reached (the attribution critic's coverage list): the text summary
+           # (K066 wording, K186 line), the USN path column (K072), snapshot recovery (K027).
+           "summary", "usn --csv", "snapshots --show")
 # `integrity --checksums` is listed separately from `integrity`: the page-reference verification it gates is
 # never reached by the plain command, so without this row the feature has no public coverage at all.
-RA_CMDS = ("summary --json", "boot -vv", "supb -vv", "chkp -vv", "objects", "schema", "containers")
+RA_CMDS = ("summary --json", "boot -vv", "supb -vv", "chkp -vv", "objects", "schema", "containers",
+           "summary++")   # 1.13.1: the refsanalysis capacity text (K066)
 
 
 def find_images(root):
@@ -115,7 +119,9 @@ def main():
     wset, gset = set(want), set(got)
     changed = sorted(gset - wset)
     print("FAIL — %d of %d rows differ" % (len(changed), len(want)))
-    for row in changed[:20]:
+    # Every changed row: the list is at most one row per (image, command), and a capped listing reported
+    # "22 differ" while naming 20 -- the two it dropped are exactly the rows a reviewer then cannot account for.
+    for row in changed:
         print("   now: %s" % row)
     return 1
 

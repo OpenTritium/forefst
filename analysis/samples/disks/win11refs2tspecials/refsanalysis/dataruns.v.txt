@@ -2486,7 +2486,7 @@ File Data Locations
   INLINE    testspecials/dir_gamma_163068/dir_echo_659970/dir_cache_507104/dir_romeo_851778/dir_india_917272/hardlink_data_978230.lnk
             size=0 (bytes stored in the record; record is split) — no clusters
   EXTENT    testspecials/dir_gamma_163068/dir_echo_659970/dir_cache_507104/dir_romeo_851778/dir_india_917272/papa_kilo_757910.json
-            record=split, size=163090, attrs=Archive, extents=2, clusters=40
+            record=split, size=163090, attrs=0x0, extents=2, clusters=40
             created=2026-05-16 16:34:49
             run: fvcn=0 VLCN=0x671103d PLCN=0x337903d clusters=1 disk=0x337a03d000
             run: fvcn=1 VLCN=0x671103e PLCN=0x337903e clusters=39 disk=0x337a03e000

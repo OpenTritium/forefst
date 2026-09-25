@@ -22,7 +22,7 @@ Checkpoint
 File System Content
 ------------------------------------------------------------------------------
   Directories:        118
-  Files:              776 (251 resident + 525 non-resident)
+  Files:              776 (251 inline + 525 extent-backed)
   Total file size:    803.4 MB
   Security descs:     7
   Oldest timestamp:   2021-05-18 07:16:04 UTC

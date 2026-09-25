@@ -2749,7 +2749,7 @@
     {
       "name": "testspecials/dir_record_119518/dir_yankee_902047/dir_tango_893400/dir_backup_465193/output_draft_769757.lnk",
       "is_dir": false,
-      "file_attrs": 1056,
+      "file_attrs": 1024,
       "has_reparse": true,
       "reparse_data": null,
       "wsl_eas": {},
@@ -3299,7 +3299,7 @@
     {
       "name": "testspecials/symlink_india_844252.lnk",
       "is_dir": false,
-      "file_attrs": 1056,
+      "file_attrs": 1024,
       "has_reparse": true,
       "reparse_data": null,
       "wsl_eas": {},

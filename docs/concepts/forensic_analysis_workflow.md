@@ -152,7 +152,7 @@ NTFS's reusable MFT records.
 ```sh
 python3 forefst.py <image> deleted                        # recovery (default): trash + diff + live-page slack
 python3 forefst.py <image> deleted --full                 # complete: + whole-volume orphan-page scan + carve (slow: ~1 min/64 GB)
-python3 forefst.py <image> export deleted DIR             # write recovered .row + .recovered content
+python3 forefst.py <image> export deleted DIR             # write the index + recovered content (content/)
 python3 forefst.py <image> snapshots -v                   # Method 4: list $SNAPSHOT streams
 python3 forefst.py <image> files --cow-before earlier.raw # forward CoW version recovery (two images)
 ```

@@ -408,7 +408,7 @@ ReFS Reparse Points
 
   testintegrity/dir_gamma_404999/dir_whiskey_550421/dir_sierra_463915/dir_yankee_672946/dir_uniform_914766/dir_quebec_957455/dir_victor_956392/xbpt_hardlink_log_242062.lnk
     Type:      FILE
-    Attrs:     0x8420
+    Attrs:     0x8400
     Reparse:   IO_REPARSE_TAG_SYMLINK (0xa000000c)  [split record]
     Target:    N:\testintegrity\dir_gamma_333765\dir_zulu_845500\xbpt_delta_mike_801553.tmp
 
@@ -764,7 +764,7 @@ ReFS Reparse Points
 
   testintegrity/dir_gamma_404999/xbpt_hardlink_hotel_381329.lnk
     Type:      FILE
-    Attrs:     0x8420
+    Attrs:     0x8400
     Reparse:   IO_REPARSE_TAG_SYMLINK (0xa000000c)  [split record]
     Target:    N:\testintegrity\dir_romeo_329630\dir_kilo_987907\xbpt_symlink_romeo_618064.lnk
 
@@ -866,7 +866,7 @@ ReFS Reparse Points
 
   testintegrity/dir_log_989773/dir_gamma_610434/dir_romeo_230799/xbpt_hardlink_mike_245933.lnk
     Type:      FILE
-    Attrs:     0x8420
+    Attrs:     0x8400
     Reparse:   IO_REPARSE_TAG_SYMLINK (0xa000000c)  [split record]
     Target:    N:\testintegrity\dir_report_583335\dir_kilo_863699\xbpt_record_cache_677917.dat
 
@@ -962,7 +962,7 @@ ReFS Reparse Points
 
   testintegrity/dir_romeo_348517/dir_alpha_208192/dir_tango_606500/dir_temp_180881/dir_oscar_738913/xbpt_audit_log_591381.lnk
     Type:      FILE
-    Attrs:     0x8420
+    Attrs:     0x8400
     Reparse:   IO_REPARSE_TAG_SYMLINK (0xa000000c)  [split record]
     Target:    N:\testintegrity\dir_report_583335\dir_kilo_863699\xbpt_record_cache_677917.dat
 
@@ -1068,7 +1068,7 @@ ReFS Reparse Points
 
   testintegrity/dir_romeo_348517/dir_alpha_208192/xbpt_hardlink_hotel_108536.lnk
     Type:      FILE
-    Attrs:     0x8420
+    Attrs:     0x8400
     Reparse:   IO_REPARSE_TAG_SYMLINK (0xa000000c)  [split record]
     Target:    N:\testintegrity\dir_report_583335\dir_kilo_863699\xbpt_record_cache_677917.dat
 
@@ -1190,7 +1190,7 @@ ReFS Reparse Points
 
   testintegrity/dir_romeo_348517/dir_lima_228687/dir_india_641930/xbpt_hardlink_archive_775977.lnk
     Type:      FILE
-    Attrs:     0x8420
+    Attrs:     0x8400
     Reparse:   IO_REPARSE_TAG_SYMLINK (0xa000000c)  [split record]
     Target:    N:\testintegrity\dir_report_583335\dir_kilo_863699\xbpt_record_cache_677917.dat
 
@@ -1284,7 +1284,7 @@ ReFS Reparse Points
 
   testintegrity/dir_romeo_348517/dir_lima_228687/dir_kilo_987907/xbpt_symlink_audit_699430.lnk
     Type:      FILE
-    Attrs:     0x8420
+    Attrs:     0x8400
     Reparse:   IO_REPARSE_TAG_SYMLINK (0xa000000c)  [split record]
     Target:    N:\testintegrity\dir_report_583335\dir_kilo_863699\xbpt_record_cache_677917.dat
 
@@ -1404,7 +1404,7 @@ ReFS Reparse Points
 
   testintegrity/dir_romeo_348517/xbpt_quebec_config_670685.lnk
     Type:      FILE
-    Attrs:     0x8420
+    Attrs:     0x8400
     Reparse:   IO_REPARSE_TAG_SYMLINK (0xa000000c)  [split record]
     Target:    N:\testintegrity\dir_output_819015\xbpt_delta_hotel_266388.json
 
@@ -1436,7 +1436,7 @@ ReFS Reparse Points
 
   testintegrity/dir_tango_306249/xbpt_hardlink_config_304268.lnk
     Type:      FILE
-    Attrs:     0x8420
+    Attrs:     0x8400
     Reparse:   IO_REPARSE_TAG_SYMLINK (0xa000000c)  [split record]
     Target:    N:\testintegrity\dir_report_583335\dir_kilo_863699\xbpt_record_cache_677917.dat
 
@@ -1492,7 +1492,7 @@ ReFS Reparse Points
 
   testintegrity/xbpt_data_romeo_144525.lnk
     Type:      FILE
-    Attrs:     0x8420
+    Attrs:     0x8400
     Reparse:   IO_REPARSE_TAG_SYMLINK (0xa000000c)  [split record]
     Target:    N:\testintegrity\dir_output_819015\xbpt_delta_hotel_266388.json
 
@@ -1608,7 +1608,7 @@ ReFS Reparse Points
 
   testspecials/dir_echo_260113/dir_november_183663/dir_record_577164/dir_draft_894936/xbpt_hardlink_uniform_216653.lnk
     Type:      FILE
-    Attrs:     0x420
+    Attrs:     0x400
     Reparse:   IO_REPARSE_TAG_SYMLINK (0xa000000c)  [split record]
     Target:    N:\testspecials\dir_archive_684726\dir_config_949022\xbpt_gamma_oscar_773469.json
 
@@ -1814,7 +1814,7 @@ ReFS Reparse Points
 
   testspecials/dir_echo_260113/dir_november_183663/dir_yankee_438871/dir_uniform_194637/xbpt_hardlink_lima_691126.lnk
     Type:      FILE
-    Attrs:     0x420
+    Attrs:     0x400
     Reparse:   IO_REPARSE_TAG_SYMLINK (0xa000000c)  [split record]
     Target:    N:\testspecials\dir_archive_684726\dir_config_949022\xbpt_gamma_oscar_773469.json
 
@@ -2586,7 +2586,7 @@ ReFS Reparse Points
 
   testspecials/dir_romeo_413583/dir_kilo_704584/dir_temp_947981/dir_papa_141573/dir_temp_742939/dir_gamma_421188/dir_uniform_641683/xbpt_hardlink_log_117322.lnk
     Type:      FILE
-    Attrs:     0x420
+    Attrs:     0x400
     Reparse:   IO_REPARSE_TAG_SYMLINK (0xa000000c)  [split record]
     Target:    N:\testspecials\dir_audit_640029\xbpt_quebec_victor_195703.tmp
 
@@ -2632,13 +2632,13 @@ ReFS Reparse Points
 
   testspecials/dir_romeo_413583/dir_kilo_704584/dir_temp_947981/dir_papa_141573/dir_temp_742939/dir_oscar_946138/dir_gamma_942515/xbpt_hardlink_india_341668.lnk
     Type:      FILE
-    Attrs:     0x420
+    Attrs:     0x400
     Reparse:   IO_REPARSE_TAG_SYMLINK (0xa000000c)  [split record]
     Target:    N:\testspecials\dir_audit_640029\xbpt_quebec_victor_195703.tmp
 
   testspecials/dir_romeo_413583/dir_kilo_704584/dir_temp_947981/dir_papa_141573/dir_temp_742939/dir_oscar_946138/dir_gamma_942515/xbpt_hardlink_kilo_480110.lnk
     Type:      FILE
-    Attrs:     0x420
+    Attrs:     0x400
     Reparse:   IO_REPARSE_TAG_SYMLINK (0xa000000c)  [split record]
     Target:    N:\testspecials\dir_archive_684726\dir_config_949022\xbpt_gamma_oscar_773469.json
 
@@ -2794,7 +2794,7 @@ ReFS Reparse Points
 
   testspecials/dir_romeo_413583/dir_kilo_704584/dir_temp_947981/xbpt_papa_index_753175.lnk
     Type:      FILE
-    Attrs:     0x420
+    Attrs:     0x400
     Reparse:   IO_REPARSE_TAG_SYMLINK (0xa000000c)  [split record]
     Target:    N:\testspecials\dir_audit_640029\xbpt_quebec_victor_195703.tmp
 
@@ -2854,7 +2854,7 @@ ReFS Reparse Points
 
   testspecials/dir_romeo_413583/dir_kilo_704584/xbpt_hardlink_romeo_974385.lnk
     Type:      FILE
-    Attrs:     0x420
+    Attrs:     0x400
     Reparse:   IO_REPARSE_TAG_SYMLINK (0xa000000c)  [split record]
     Target:    N:\testspecials\dir_archive_684726\dir_config_949022\xbpt_gamma_oscar_773469.json
 
@@ -2946,7 +2946,7 @@ ReFS Reparse Points
 
   testspecials/dir_romeo_413583/dir_sync_209686/xbpt_hardlink_delta_599121.lnk
     Type:      FILE
-    Attrs:     0x420
+    Attrs:     0x400
     Reparse:   IO_REPARSE_TAG_SYMLINK (0xa000000c)  [split record]
     Target:    N:\testspecials\dir_archive_684726\dir_config_949022\xbpt_gamma_oscar_773469.json
 
@@ -3090,7 +3090,7 @@ ReFS Reparse Points
 
   testspecials/xbpt_hardlink_papa_264681.lnk
     Type:      FILE
-    Attrs:     0x420
+    Attrs:     0x400
     Reparse:   IO_REPARSE_TAG_SYMLINK (0xa000000c)  [split record]
     Target:    N:\testspecials\dir_audit_640029\xbpt_quebec_victor_195703.tmp
 
@@ -3124,7 +3124,7 @@ ReFS Reparse Points
 
   testspecials/xbpt_symlink_index_967293.lnk
     Type:      FILE
-    Attrs:     0x420
+    Attrs:     0x400
     Reparse:   IO_REPARSE_TAG_SYMLINK (0xa000000c)  [split record]
     Target:    N:\testspecials\dir_archive_684726\dir_config_949022\xbpt_gamma_oscar_773469.json
 

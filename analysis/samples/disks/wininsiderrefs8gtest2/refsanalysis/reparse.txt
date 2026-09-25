@@ -1374,7 +1374,7 @@ ReFS Reparse Points
 
   testspecials/dir_record_119518/dir_yankee_902047/dir_tango_893400/dir_backup_465193/output_draft_769757.lnk
     Type:      FILE
-    Attrs:     0x420
+    Attrs:     0x400
     Reparse:   IO_REPARSE_TAG_SYMLINK (0xa000000c)  [split record]
     Target:    r:\testspecials\symlink_temp_137701.lnk
 
@@ -1662,7 +1662,7 @@ ReFS Reparse Points
 
   testspecials/symlink_india_844252.lnk
     Type:      FILE
-    Attrs:     0x420
+    Attrs:     0x400
     Reparse:   IO_REPARSE_TAG_SYMLINK (0xa000000c)  [split record]
     Target:    r:\testspecials\dir_quebec_903671\dir_delta_826049\dir_index_393008\temp_cache_133689.md
 

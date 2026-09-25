@@ -1,5 +1,5 @@
 # Sample command manifest — wininsiderrefs8gtest2.raw
-<!-- generated-by: forefst.py=v1.13.0/5095b2f4fac7a53d refsanalysis.py=v1.13.0 -->
+<!-- generated-by: forefst.py=v1.13.1/d0e162dcdf8755aa refsanalysis.py=v1.13.1 -->
 
 Every file under `forefst/` and `refsanalysis/`, and the exact command that produced it.
 Regenerate with `analysis/tools/analysis_scripts/gen_samples.sh`. Image path shown as the basename.
@@ -33,7 +33,7 @@ Regenerate with `analysis/tools/analysis_scripts/gen_samples.sh`. Image path sho
 | `timeline.txt` | `forefst wininsiderrefs8gtest2.raw timeline --limit 200` |
 | `timeline.mlog.csv` | `forefst wininsiderrefs8gtest2.raw timeline --source MLOG --csv` |
 | `timestomp.txt` | `forefst wininsiderrefs8gtest2.raw timestomp` |
-| `timestomp.csv` | `forefst wininsiderrefs8gtest2.raw timestomp --csv -` |
+| `timestomp.csv` | `forefst wininsiderrefs8gtest2.raw timestomp --csv` |
 | `usn.txt` | `forefst wininsiderrefs8gtest2.raw usn --stats` |
 | `mlog.txt` | `forefst wininsiderrefs8gtest2.raw mlog --stats` |
 | `mlog.parsed.txt` | `forefst wininsiderrefs8gtest2.raw mlog --parse` |

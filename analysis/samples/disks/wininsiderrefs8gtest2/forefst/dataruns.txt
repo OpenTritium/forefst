@@ -1456,7 +1456,7 @@ File Data Locations
             record=embedded, size=473236, attrs=Archive, extents=2, clusters=8
             created=2026-05-19 19:59:06
   EXTENT    testspecials/dir_record_119518/dir_yankee_902047/india_uniform_529180.dat
-            record=split, size=463426, attrs=Archive, extents=2, clusters=8
+            record=split, size=463426, attrs=0x0, extents=2, clusters=8
             created=2026-05-19 19:58:13
   EXTENT    testspecials/dir_record_119518/dir_yankee_902047/lima_config_610449.dat
             record=embedded, size=99437, attrs=Archive, extents=1, clusters=2

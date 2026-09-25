@@ -1,7 +1,7 @@
 # forefst wininsiderrefs8gtest2.raw mlog --parse
 # ----------------------------------------------------------------------------
 Building OID → path map …
-  132 paths resolved
+  131 paths resolved
 
 ==============================================================================
 MLog Transactions (parsed)

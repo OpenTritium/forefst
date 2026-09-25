@@ -1,7 +1,7 @@
 # forefst win11refs2tsnapshots.raw mlog --parse
 # ----------------------------------------------------------------------------
 Building OID → path map …
-  48 paths resolved
+  47 paths resolved
 
 ==============================================================================
 MLog Transactions (parsed)
